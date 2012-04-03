@@ -1305,7 +1305,7 @@ static int __devinit zFPGA_probe(struct platform_device *pdev)
 #endif	/* DEBUG */
 
 	for (i = 0; i < 6; i++)
-		device_create( zeraIOClass, &pdev->dev, io_groupdata.devNode + i, NULL, %s, zFPGA_device_data[i].devname); 
+		device_create( zeraIOClass, &pdev->dev, io_groupdata.devNode + i, NULL, "%s", zFPGA_device_data[i].devname); 
 
 	return 0;
 

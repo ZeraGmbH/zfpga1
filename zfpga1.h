@@ -96,38 +96,38 @@ enum resourceType {bootMem, regMem, hipMem, sysIrq, doneIrq};
 #define FPGA_irqsys_flags IRQF_SHARED | IRQF_SAMPLE_RANDOM | IRQF_TRIGGER_RISING
 #define ADSP_irqsys_flags IRQF_SHARED | IRQF_SAMPLE_RANDOM | IRQF_TRIGGER_RISING
 
-static struct device_stat {
+struct device_stat {
 	unsigned long fpgabootcount; /* 0 after reset or init */
 	int configured; /* 0 oder 1 */
 	int dspnum; /* how much dsp in the system */
 	unsigned long dspbootcount[4]; /* 0 after reset or init */
 	int dsprunning[4]; /* we have up to 4 dsp's in the system */
-} device_stat;
+};
 
 
-static struct zFPGA_platform_config {
+struct zFPGA_platform_config {
 	unsigned int	cs;
 	unsigned int	gpio_irq;
 	unsigned int	gpio_reset;
 	unsigned int 	gpio_done;
-} zFPGA_platform_config;
+};
 
 
 enum deviceType {boot, reg, dsp1, dsp2, dsp3, dsp4};
 
-static struct fpga_device_data {
+struct fpga_device_data {
 	char devname[10];
 	unsigned long base_adr; /* base adress for device */
 	int devnr;
 	int usecount; /* for permission handling */
 	struct fasync_struct *async_queue; /* for used interrupt */
-} fpga_device_data;
+};
 
 
-static struct devNode_data {
+struct devNode_data {
 	dev_t devNode;
 	struct cdev FPGA_cdev[3];
-} devNode_data;
+};
 	
 
 /* ioctl commands */

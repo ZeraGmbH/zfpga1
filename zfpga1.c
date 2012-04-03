@@ -1305,7 +1305,7 @@ static int __devinit zFPGA_probe(struct platform_device *pdev)
 #endif	/* DEBUG */
 
 	for (i = 0; i < 6; i++)
-		device_create( zeraIOClass, &pdev->dev, io_groupdata.devNode + i, NULL, "%s", zFPGA_device_data[i].devname); 
+		device_create( zeraIOClass, &pdev->dev, io_groupdata.devNode + i, NULL, "%s%s", FPGADEV_NAME, zFPGA_device_data[i].devname); 
 
 	return 0;
 
@@ -1476,7 +1476,7 @@ static int __init zfpga_1_init_module(void)
 {
 	int result;
 
-	pr_info( "Module FPGA_1 init\n" );
+	pr_info( "Module zFPGA1 init\n" );
 
 	/* let's try to get all needed hardware stuff first */	
 	if ( (result = fpga_config()) < 0) {
@@ -1514,7 +1514,7 @@ out:
 /* void cleanup_module(void) */
 static void __exit zfpga_1_exit_module(void)
 {
-	pr_info( "Module zFPGA-1 exit\n" );
+	pr_info( "Module zFPGA1 exit\n" );
 
 	class_destroy( zeraIOClass);
 
@@ -1528,7 +1528,7 @@ static void __exit zfpga_1_exit_module(void)
 MODULE_DESCRIPTION("ZERA FPGA Type 1 kernel module");
 MODULE_AUTHOR("Peter Lohmer (p.lohmer@zera.de)");
 MODULE_LICENSE("GPL");
-MODULE_SUPPORTED_DEVICE("ZERA zFPGA-1");
+MODULE_SUPPORTED_DEVICE("ZERA zFPGA1");
 
 module_init(zfpga_1_init_module);
 module_exit(zfpga_1_exit_module);

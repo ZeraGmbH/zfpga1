@@ -1305,7 +1305,7 @@ static int __devinit zFPGA_probe(struct platform_device *pdev)
 #endif	/* DEBUG */
 
 	for (i = 0; i < 6; i++)
-		device_create( zeraIOClass, &pdev->dev, io_groupdata.devNode + i, NULL, "zFPGA/%s", zFPGA_device_data[i].devname); 
+		device_create( zeraIOClass, &pdev->dev, io_groupdata.devNode + i, NULL, %s, zFPGA_device_data[i].devname); 
 
 	return 0;
 
@@ -1440,7 +1440,7 @@ static int __init fpga_config(void)
 	}
 
 #ifdef DEBUG
-	pr_info( "%s: GPIO%d (done) linked to irq%d\n", FPGADEV_NAME, zFPGA_platform_data.gpio_irq, zFPGA_resources[doneIrq].start);
+	pr_info( "%s: GPIO%d (done) linked to irq%d\n", FPGADEV_NAME, zFPGA_platform_data.gpio_done, zFPGA_resources[doneIrq].start);
 #endif // DEBUG
 
 	init_waitqueue_head(&adspdev_wqueue);

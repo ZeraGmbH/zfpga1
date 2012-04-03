@@ -64,7 +64,7 @@
 
 #define FPGA_IOC_MAGIC 'f' 
 /* using 'f' as the magic number to build the ioctl commands */
-#define FPGADEV_NAME "zFPGA-1" 
+#define FPGADEV_NAME "zFPGA1" 
 /* the device name */
 #define ZERACLASS_NAME "zeraIO" 
 /* the device class name... we need a device class for creating device file names and adding attributes */

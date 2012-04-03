@@ -143,7 +143,8 @@ static struct device_stat zFPGA_device_stat = {
 
 static struct devNode_data io_groupdata; 
 
-
+/* no timing settings at the moment */
+#ifdef __notyet
 static struct gpmc_timings FPGA_GPMC_Timing = {
 	/* Minimum clock period for synchronous mode (in picoseconds) */
 	sync_clk:0, /* the minimum clock period would be L3_ICLK now, but we are using async. mode */
@@ -176,7 +177,7 @@ static struct gpmc_timings FPGA_GPMC_Timing = {
 	wr_access:50,		/* WRACCESSTIME */
 	wr_data_mux_bus:20,	/* WRDATAONADMUXBUS */
 };
-
+#endif
 
 
 static ssize_t FPGA_boot_write (struct file *file, const char *buf, size_t count,loff_t *offset);
@@ -1376,11 +1377,12 @@ static int __init fpga_config(void)
 	gpmc_cs_configure( zFPGA_platform_data.cs, GPMC_CONFIG_DEV_TYPE, GPMC_DEVICETYPE_NOR); /* async. nor flash device type with muxed adress/data pins */
 
 	/* timing settings are not a bad idea */
+	/* but gpmc_cs_set_timings not exported from kernel (not yet)
 	if ( (ret = gpmc_cs_set_timings(zFPGA_platform_data.cs, &FPGA_GPMC_Timing)) <  0) {
 		pr_warning( "%s: timing settings for CS%d rejected\n", FPGADEV_NAME, zFPGA_platform_data.cs);
 		goto free_CS;
 	}
-
+	*/ 
 #ifdef DEBUG
 	pr_info( "%s: timing settings for CS%d done\n", FPGADEV_NAME, zFPGA_platform_data.cs);
 #endif // DEBUG

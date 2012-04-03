@@ -1206,7 +1206,7 @@ static int __devinit zFPGA_probe(struct platform_device *pdev)
 		goto out;
 	}
 	
-	zFPGA_device_data[boot].base_adr = ioremap(res_ioboot->start, SZ_16M, 0);
+	zFPGA_device_data[boot].base_adr = ioremap(res_ioboot->start, SZ_16M);
 	
 	if (!request_mem_region(res_ioreg->start, resource_size(res_ioreg), FPGADEV_NAME)) {
 		pr_warning("%s: request_mem_region for %s failed\n", FPGADEV_NAME, RESOURCE_NAME_REG);
@@ -1214,7 +1214,7 @@ static int __devinit zFPGA_probe(struct platform_device *pdev)
 		goto free_MEMBoot;
 	}
 	
-	zFPGA_device_data[reg].base_adr = ioremap(res_ioreg->start, SZ_16M, 0);
+	zFPGA_device_data[reg].base_adr = ioremap(res_ioreg->start, SZ_16M);
 
 #ifdef DEBUG
 	pr_info ( "%s : request_mem_region for %s 0x%lx bytes at adr 0x%lx successful\n", FPGADEV_NAME, RESOURCE_NAME_REG, (unsigned long)resource_size(res_ioreg), (unsigned long) res_ioreg->start);
@@ -1227,7 +1227,7 @@ static int __devinit zFPGA_probe(struct platform_device *pdev)
 	} 
 
 	for ( i = 0 ; i < 4; i++ )
-		zFPGA_device_data[dsp1+i].base_adr = ioremap(res_iohip->start + sizeof(dspmmap)*i, SZ_16M, 0);	
+		zFPGA_device_data[dsp1+i].base_adr = ioremap(res_iohip->start + sizeof(dspmmap)*i, SZ_16M);	
 
 
 #ifdef DEBUG

@@ -358,6 +358,7 @@ ssize_t FPGA_boot_write (struct file *file, const char *buf, size_t count,loff_t
 	adr = devdata->base_adr;
 	len = count;
 
+	
 	while (len--)
 		writeb(*(buf++), adr);
 	
@@ -1205,7 +1206,7 @@ static int __devinit zFPGA_probe(struct platform_device *pdev)
 		goto out;
 	}
 	
-	zFPGA_device_data[boot].base_adr = res_ioboot->start;
+	zFPGA_device_data[boot].base_adr = ioremap(res_ioboot->start, SZ_16M, 0);
 	
 	if (!request_mem_region(res_ioreg->start, resource_size(res_ioreg), FPGADEV_NAME)) {
 		pr_warning("%s: request_mem_region for %s failed\n", FPGADEV_NAME, RESOURCE_NAME_REG);
@@ -1213,7 +1214,7 @@ static int __devinit zFPGA_probe(struct platform_device *pdev)
 		goto free_MEMBoot;
 	}
 	
-	zFPGA_device_data[reg].base_adr = res_ioreg->start;
+	zFPGA_device_data[reg].base_adr = ioremap(res_ioreg->start, SZ_16M, 0);
 
 #ifdef DEBUG
 	pr_info ( "%s : request_mem_region for %s 0x%lx bytes at adr 0x%lx successful\n", FPGADEV_NAME, RESOURCE_NAME_REG, (unsigned long)resource_size(res_ioreg), (unsigned long) res_ioreg->start);
@@ -1226,7 +1227,7 @@ static int __devinit zFPGA_probe(struct platform_device *pdev)
 	} 
 
 	for ( i = 0 ; i < 4; i++ )
-		zFPGA_device_data[dsp1+i].base_adr = res_iohip->start + sizeof(dspmmap)*i;	
+		zFPGA_device_data[dsp1+i].base_adr = ioremap(res_iohip->start + sizeof(dspmmap)*i, SZ_16M, 0);	
 
 
 #ifdef DEBUG
@@ -1476,7 +1477,7 @@ static int __init zfpga_1_init_module(void)
 {
 	int result;
 
-	pr_info( "Module zFPGA1 init\n" );
+	pr_info( "Module %s init\n", FPGADEV_NAME );
 
 	/* let's try to get all needed hardware stuff first */	
 	if ( (result = fpga_config()) < 0) {
@@ -1501,6 +1502,8 @@ static int __init zfpga_1_init_module(void)
 		goto free_device;
 	}
 	
+	pr_info ( "Module %s install successful\n", FPGADEV_NAME);
+
 	return 0;
 
 free_device: 
@@ -1514,7 +1517,7 @@ out:
 /* void cleanup_module(void) */
 static void __exit zfpga_1_exit_module(void)
 {
-	pr_info( "Module zFPGA1 exit\n" );
+	pr_info( "Module %s exit\n", FPGADEV_NAME);
 
 	class_destroy( zeraIOClass);
 

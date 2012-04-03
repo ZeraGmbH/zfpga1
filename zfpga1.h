@@ -74,7 +74,7 @@
 
 #define GPIO_RESET_PIN 186 /* gpio pins in use */
 #define GPIO_DONE_PIN 146
-#define GPIO_IRQ_PIN 145
+#define GPIO_IRQ_PIN 147
 
 #define GPIO_RESET_NAME "zFPGA reset"
 #define GPIO_DONE_NAME "zFPGA done"

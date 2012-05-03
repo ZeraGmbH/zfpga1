@@ -143,6 +143,7 @@ static struct device_stat zFPGA_device_stat = {
 
 static struct devNode_data io_groupdata; 
 
+#define __notyet 1
 /* no timing settings at the moment */
 #ifdef __notyet
 static struct gpmc_timings FPGA_GPMC_Timing = {
@@ -160,12 +161,12 @@ static struct gpmc_timings FPGA_GPMC_Timing = {
 	adv_wr_off:10,		/* Write deassertion time */
 
 	/* WE signals timings corresponding to GPMC_CONFIG4 */
-	we_on:20 ,		/* WE assertion time */
-	we_off:50 ,		/* WE deassertion time */
+	we_on:0 ,		/* WE assertion time */
+	we_off:35 ,		/* WE deassertion time */
 
 	/* OE signals timings corresponding to GPMC_CONFIG4 */
-	oe_on:20,		/* OE assertion time */
-	oe_off:50,		/* OE deassertion time */
+	oe_on:0,		/* OE assertion time */
+	oe_off:45,		/* OE deassertion time */
 
 	/* Access time and cycle time timings corresponding to GPMC_CONFIG5 */
 	page_burst_access:30,	/* Multiple access word delay */
@@ -1378,12 +1379,12 @@ static int __init fpga_config(void)
 	gpmc_cs_configure( zFPGA_platform_data.cs, GPMC_CONFIG_DEV_TYPE, GPMC_DEVICETYPE_NOR); /* async. nor flash device type with muxed adress/data pins */
 
 	/* timing settings are not a bad idea */
-	/* but gpmc_cs_set_timings not exported from kernel (not yet)
+	/* but gpmc_cs_set_timings not exported from kernel (not yet) */
 	if ( (ret = gpmc_cs_set_timings(zFPGA_platform_data.cs, &FPGA_GPMC_Timing)) <  0) {
 		pr_warning( "%s: timing settings for CS%d rejected\n", FPGADEV_NAME, zFPGA_platform_data.cs);
 		goto free_CS;
 	}
-	*/ 
+	
 #ifdef DEBUG
 	pr_info( "%s: timing settings for CS%d done\n", FPGADEV_NAME, zFPGA_platform_data.cs);
 #endif // DEBUG

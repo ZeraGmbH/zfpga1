@@ -1349,6 +1349,20 @@ static int __init fpga_config(void)
 	pr_info ("%s: Start configuring\n", FPGADEV_NAME);
 #endif // DEBUG
 
+
+	/* timing settings are not a bad idea */
+	/* but normally it shouldn't be a good idea to do it before gpmc_cs_request */
+	/* but after gpmc_cs_request the cs is enabled and timing settings will be disgarded (see datasheet) */	
+	/* but gpmc_cs_set_timings not exported from kernel,..... we changed the kernel */
+	if ( (ret = gpmc_cs_set_timings(zFPGA_platform_data.cs, &FPGA_GPMC_Timing)) <  0) {
+		pr_warning( "%s: timing settings for CS%d rejected\n", FPGADEV_NAME, zFPGA_platform_data.cs);
+		// goto free_CS;
+	}
+
+#ifdef DEBUG
+		pr_info( "%s: timing settings for CS%d done, configuring now\n", FPGADEV_NAME, zFPGA_platform_data.cs);
+#endif // DEBUG
+
 	if ( (ret = gpmc_cs_request(zFPGA_platform_data.cs, SZ_16M, &cs_mem_base)) <  0) {
 		pr_warning( "%s: CS%d already in use \n", FPGADEV_NAME, zFPGA_platform_data.cs );
 		goto out;
@@ -1376,20 +1390,8 @@ static int __init fpga_config(void)
 	/* now we have to configure the cs  */
 	gpmc_cs_configure( zFPGA_platform_data.cs, GPMC_CONFIG_DEV_SIZE, GPMC_CONFIG1_DEVICESIZE_16); /* we'll take 16bit for booting as well as normal operation */
 	gpmc_cs_configure( zFPGA_platform_data.cs, GPMC_CONFIG_DEV_TYPE, GPMC_DEVICETYPE_NOR); /* async. nor flash device type with muxed adress/data pins */
-
-	/* timing settings are not a bad idea */
-	/* but gpmc_cs_set_timings not exported from kernel (not yet) */
-	if ( (ret = gpmc_cs_set_timings(zFPGA_platform_data.cs, &FPGA_GPMC_Timing)) <  0) {
-		pr_warning( "%s: timing settings for CS%d rejected\n", FPGADEV_NAME, zFPGA_platform_data.cs);
-		goto free_CS;
-	}
-
 	gpmc_cs_configure( zFPGA_platform_data.cs, GPMC_CONFIG_RDY_BSY, 1); /* enable wait monitoring for read/write */
 	
-#ifdef DEBUG
-	pr_info( "%s: timing settings for CS%d done\n", FPGADEV_NAME, zFPGA_platform_data.cs);
-#endif // DEBUG
-
 	/* we will request the gpio's needed now */
 
 	if ( (ret = gpio_request(zFPGA_platform_data.gpio_reset, GPIO_RESET_NAME)) < 0) {
@@ -1445,6 +1447,13 @@ static int __init fpga_config(void)
 #ifdef DEBUG
 	pr_info( "%s: GPIO%d (done) linked to irq%d\n", FPGADEV_NAME, zFPGA_platform_data.gpio_done, zFPGA_resources[doneIrq].start);
 #endif // DEBUG
+
+	reset_FPGA(void);
+
+#ifdef DEBUG
+	pr_info( "%s: output reset pulse for FPGA\n", FPGADEV_NAME);
+#endif // DEBUG
+
 
 	init_waitqueue_head(&adspdev_wqueue);
 

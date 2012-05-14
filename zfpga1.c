@@ -1448,7 +1448,7 @@ static int __init fpga_config(void)
 	pr_info( "%s: GPIO%d (done) linked to irq%d\n", FPGADEV_NAME, zFPGA_platform_data.gpio_done, zFPGA_resources[doneIrq].start);
 #endif // DEBUG
 
-	reset_FPGA(void);
+	reset_FPGA();
 
 #ifdef DEBUG
 	pr_info( "%s: output reset pulse for FPGA\n", FPGADEV_NAME);

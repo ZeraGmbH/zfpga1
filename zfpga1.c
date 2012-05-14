@@ -1374,7 +1374,6 @@ static int __init fpga_config(void)
 	zFPGA_resources[hipMem].end = cs_mem_base + DSPHipMemBase + sizeof(dspmmap)*4 - 1;
 
 	/* now we have to configure the cs  */
-	gpmc_cs_configure( zFPGA_platform_data.cs, GPMC_CONFIG_RDY_BSY, 1); /* enable wait monitoring for read/write */
 	gpmc_cs_configure( zFPGA_platform_data.cs, GPMC_CONFIG_DEV_SIZE, GPMC_CONFIG1_DEVICESIZE_16); /* we'll take 16bit for booting as well as normal operation */
 	gpmc_cs_configure( zFPGA_platform_data.cs, GPMC_CONFIG_DEV_TYPE, GPMC_DEVICETYPE_NOR); /* async. nor flash device type with muxed adress/data pins */
 
@@ -1384,6 +1383,8 @@ static int __init fpga_config(void)
 		pr_warning( "%s: timing settings for CS%d rejected\n", FPGADEV_NAME, zFPGA_platform_data.cs);
 		goto free_CS;
 	}
+
+	gpmc_cs_configure( zFPGA_platform_data.cs, GPMC_CONFIG_RDY_BSY, 1); /* enable wait monitoring for read/write */
 	
 #ifdef DEBUG
 	pr_info( "%s: timing settings for CS%d done\n", FPGADEV_NAME, zFPGA_platform_data.cs);

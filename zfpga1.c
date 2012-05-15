@@ -308,7 +308,7 @@ static irqreturn_t FPGA_done_isr ( int irq_nr, void *dev_id )
 	zFPGA_device_stat.configured = gpio_get_value(zFPGA_platform_data.gpio_done); 
 
 #ifdef DEBUG
-	pr_info( "%s : received interrupt (fpga) handled\n", FPGADEV_NAME);
+	pr_info( "%s : received interrupt (fpga done) handled\n", FPGADEV_NAME);
 #endif
 
 	return IRQ_HANDLED;
@@ -377,6 +377,9 @@ ssize_t FPGA_boot_write (struct file *file, const char *buf, size_t count,loff_t
 
 int reset_FPGA(void)
 {
+#ifdef DEBUG
+	printk(KERN_DEBUG "%s : reset_FPGA entered\n", FPGADEV_NAME); 
+#endif /* DEBUG */
 	gpio_set_value(zFPGA_platform_data.gpio_reset, 1);
 	udelay(10);
 	gpio_set_value(zFPGA_platform_data.gpio_reset, 0);
@@ -1350,19 +1353,6 @@ static int __init fpga_config(void)
 #endif // DEBUG
 
 
-	/* timing settings are not a bad idea */
-	/* but normally it shouldn't be a good idea to do it before gpmc_cs_request */
-	/* but after gpmc_cs_request the cs is enabled and timing settings will be disgarded (see datasheet) */	
-	/* but gpmc_cs_set_timings not exported from kernel,..... we changed the kernel */
-	if ( (ret = gpmc_cs_set_timings(zFPGA_platform_data.cs, &FPGA_GPMC_Timing)) <  0) {
-		pr_warning( "%s: timing settings for CS%d rejected\n", FPGADEV_NAME, zFPGA_platform_data.cs);
-		// goto free_CS;
-	}
-
-#ifdef DEBUG
-		pr_info( "%s: timing settings for CS%d done, configuring now\n", FPGADEV_NAME, zFPGA_platform_data.cs);
-#endif // DEBUG
-
 	if ( (ret = gpmc_cs_request(zFPGA_platform_data.cs, SZ_16M, &cs_mem_base)) <  0) {
 		pr_warning( "%s: CS%d already in use \n", FPGADEV_NAME, zFPGA_platform_data.cs );
 		goto out;
@@ -1390,6 +1380,20 @@ static int __init fpga_config(void)
 	/* now we have to configure the cs  */
 	gpmc_cs_configure( zFPGA_platform_data.cs, GPMC_CONFIG_DEV_SIZE, GPMC_CONFIG1_DEVICESIZE_16); /* we'll take 16bit for booting as well as normal operation */
 	gpmc_cs_configure( zFPGA_platform_data.cs, GPMC_CONFIG_DEV_TYPE, GPMC_DEVICETYPE_NOR); /* async. nor flash device type with muxed adress/data pins */
+	
+	/* timing settings are not a bad idea */
+	/* but normally it shouldn't be a good idea to do it before gpmc_cs_request */
+	/* but after gpmc_cs_request the cs is enabled and timing settings will be disgarded (see datasheet) */	
+	/* but gpmc_cs_set_timings not exported from kernel,..... we changed the kernel */
+	if ( (ret = gpmc_cs_set_timings(zFPGA_platform_data.cs, &FPGA_GPMC_Timing)) <  0) {
+		pr_warning( "%s: timing settings for CS%d rejected\n", FPGADEV_NAME, zFPGA_platform_data.cs);
+		// goto free_CS;
+	}
+
+#ifdef DEBUG
+		pr_info( "%s: timing settings for CS%d done, configuring now\n", FPGADEV_NAME, zFPGA_platform_data.cs);
+#endif // DEBUG
+
 	gpmc_cs_configure( zFPGA_platform_data.cs, GPMC_CONFIG_RDY_BSY, 1); /* enable wait monitoring for read/write */
 	
 	/* we will request the gpio's needed now */
@@ -1397,8 +1401,8 @@ static int __init fpga_config(void)
 	if ( (ret = gpio_request(zFPGA_platform_data.gpio_reset, GPIO_RESET_NAME)) < 0) {
 		pr_warning( "%s: failed to request GPIO%d for reset\n", FPGADEV_NAME, zFPGA_platform_data.gpio_reset);
 		goto free_CS;
-		gpio_direction_output(zFPGA_platform_data.gpio_reset, 0); /* reset is output, inactive (low) */
 	}
+	else gpio_direction_output(zFPGA_platform_data.gpio_reset, 0); /* reset is output, inactive (low) */
 
 #ifdef DEBUG
 	pr_info ( "%s: GPIO%d for reset allocated\n", FPGADEV_NAME, zFPGA_platform_data.gpio_reset ); 
@@ -1407,8 +1411,8 @@ static int __init fpga_config(void)
 	if ( (ret = gpio_request(zFPGA_platform_data.gpio_done, GPIO_DONE_NAME)) < 0) {
 		pr_warning( "%s: failed to request GPIO%d for done\n", FPGADEV_NAME, zFPGA_platform_data.gpio_done);
 		goto free_IOReset_CS;
-		gpio_direction_input(zFPGA_platform_data.gpio_done); /* done is input */
 	}
+	else gpio_direction_input(zFPGA_platform_data.gpio_done); /* done is input */
 
 #ifdef DEBUG
 	pr_info( "%s: GPIO%d for done allocated\n", FPGADEV_NAME, zFPGA_platform_data.gpio_done);
@@ -1417,8 +1421,8 @@ static int __init fpga_config(void)
 	if ( (ret = gpio_request(zFPGA_platform_data.gpio_irq, GPIO_IRQ_NAME)) < 0) {
 		pr_warning( "%s: failed to request GPIO%d for irq\n", FPGADEV_NAME, zFPGA_platform_data.gpio_irq);
 		goto free_IODone_IOReset_CS;
-		gpio_direction_input(zFPGA_platform_data.gpio_irq); /* irq is input */
 	}
+	else gpio_direction_input(zFPGA_platform_data.gpio_irq); /* irq is input */
 
 #ifdef DEBUG
 	pr_info( "%s: GPIO%d for irq allocated\n", FPGADEV_NAME, zFPGA_platform_data.gpio_irq );

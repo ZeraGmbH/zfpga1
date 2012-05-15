@@ -151,12 +151,12 @@ struct devNode_data {
 /* fpga register memory space */
 /* for direct hardware access */
 #define FPGARegMemBase 0x0
-#define FPGARegMemSize 0x400
+#define FPGARegMemSize 0x1000
 #define FPGATotalMemSize 0x2000
 
 /* dsp hip (host interface port) emulation memory space */
 /* for access dsp internal data */
-#define DSPHipMemBase 0x400
+#define DSPHipMemBase 0x1000
 
 
 static struct dspmmap { /* dsp interface memory map */

@@ -1083,7 +1083,7 @@ int adspdev_open (struct inode *inode, struct file *file)
 
 	if (id != adsp_21262_1_magic) {
 #ifdef DEBUG
-		pr_info("%s : dsp%d not available\n", FPGADEV_NAME, devdata->devnr - dsp1 + 1);
+		pr_info("%s : dsp%d not available, id read 0x%lx\n", FPGADEV_NAME, devdata->devnr - dsp1 + 1, id);
 #endif /* DEBUG */
 		return -ENODEV;
 	}

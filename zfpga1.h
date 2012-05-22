@@ -62,8 +62,8 @@
 #include <linux/cdev.h>
 #include <linux/types.h>
 
-#define FPGA_IOC_MAGIC 'f' 
-/* using 'f' as the magic number to build the ioctl commands */
+#define FPGA_IOC_MAGIC 'a' 
+/* using 'a' as the magic number to build the ioctl commands */
 #define FPGADEV_NAME "zFPGA1" 
 /* the device name */
 #define ZERACLASS_NAME "zeraIO" 

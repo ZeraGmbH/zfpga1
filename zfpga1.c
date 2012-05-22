@@ -252,8 +252,8 @@ static irqreturn_t FPGA_irq_isr (int irq_nr,void *dev_id)
 
 #ifdef DEBUG
 	if (ret == IRQ_NONE) 
-	  	printk(KERN_DEBUG "not ");
-	printk(KERN_DEBUG "handled\n");
+	  	pr_info("not ");
+	pr_info("handled\n");
 #endif
 	return ret;
 }
@@ -276,7 +276,7 @@ static irqreturn_t ADSP_irq_isr (int irq_nr,void *dev_id)
 		devdata = zFPGA_device_data + (dsp1 + i);
 		stat = readl(devdata->base_adr + DSPSTAT) & (IS_DSP_IRQ | IS_TIMEOUT_IRQ);
 #ifdef DEBUG
-		printk(KERN_DEBUG "stat irq dsp : %ld\n",stat);
+		pr_info("stat irq dsp : %ld\n",stat);
 #endif // DEBUG
 		if (stat) {
 			if (stat & IS_DSP_IRQ) {
@@ -292,8 +292,8 @@ static irqreturn_t ADSP_irq_isr (int irq_nr,void *dev_id)
 	}
 #ifdef DEBUG
 	if (ret == IRQ_NONE) 
-	  	printk(KERN_DEBUG "not ");
-	printk(KERN_DEBUG "handled\n");
+	  	pr_info("not ");
+	pr_info("handled\n");
 #endif
 	return ret;
 }
@@ -326,13 +326,13 @@ ssize_t FPGA_boot_write (struct file *file, const char *buf, size_t count,loff_t
 	struct fpga_device_data *devdata;
 
 #ifdef DEBUG
-	printk(KERN_DEBUG "%s: fpga boot write entered\n", FPGADEV_NAME);
+	pr_info("%s: fpga boot write entered\n", FPGADEV_NAME);
 #endif /* DEBUG */
 
 	if (zFPGA_device_stat.configured)
 	{
 #ifdef DEBUG
-		printk(KERN_DEBUG "%s: fpga boot write failed (fpga already configured)\n", FPGADEV_NAME);
+		pr_info("%s: fpga boot write failed (fpga already configured)\n", FPGADEV_NAME);
 #endif /* DEBUG */
 		return -ENODEV;
 	}
@@ -342,7 +342,7 @@ ssize_t FPGA_boot_write (struct file *file, const char *buf, size_t count,loff_t
 	tmp = kmalloc(count,GFP_KERNEL);
 	if (tmp == NULL) {
 #ifdef DEBUG
-		printk(KERN_DEBUG "%s : fpga boot write , kernel memory allocation failed\n", FPGADEV_NAME);
+		pr_info("%s : fpga boot write , kernel memory allocation failed\n", FPGADEV_NAME);
 #endif /* DEBUG */
 		return -ENOMEM;
 	}
@@ -350,7 +350,7 @@ ssize_t FPGA_boot_write (struct file *file, const char *buf, size_t count,loff_t
 	/* copy user space data to kernel space */
 	if ( copy_from_user(tmp,buf,count)) {
 #ifdef DEBUG
-		printk(KERN_DEBUG "%s : fpga boot write, copy_from_user failed\n",FPGADEV_NAME);
+		pr_info("%s : fpga boot write, copy_from_user failed\n",FPGADEV_NAME);
 #endif /* DEBUG */
 		kfree(tmp);
 		return -EFAULT;
@@ -368,7 +368,7 @@ ssize_t FPGA_boot_write (struct file *file, const char *buf, size_t count,loff_t
 	kfree(tmp);
 
 #ifdef DEBUG
-	printk(KERN_DEBUG "%s : fpga boot write 0x%lx bytes written\n", FPGADEV_NAME, (unsigned long)(count)); 
+	pr_info("%s : fpga boot write 0x%lx bytes written\n", FPGADEV_NAME, (unsigned long)(count)); 
 #endif /* DEBUG */
 
 	return count; /* fpga boot data written sucessfully */
@@ -378,7 +378,7 @@ ssize_t FPGA_boot_write (struct file *file, const char *buf, size_t count,loff_t
 int reset_FPGA(void)
 {
 #ifdef DEBUG
-	printk(KERN_DEBUG "%s : reset_FPGA entered\n", FPGADEV_NAME); 
+	pr_info("%s : reset_FPGA entered\n", FPGADEV_NAME); 
 #endif /* DEBUG */
 	gpio_set_value(zFPGA_platform_data.gpio_reset, 1);
 	udelay(10);
@@ -390,14 +390,14 @@ int reset_FPGA(void)
 long FPGA_boot_ioctl (struct file *file,unsigned int cmd, unsigned long arg)
 {
 #ifdef DEBUG
-	printk(KERN_DEBUG "%s: fpga boot ioctl entered, cmd: 0x%x, arg: %lx\n", FPGADEV_NAME, cmd, arg);
+	pr_info("%s: fpga boot ioctl entered, cmd: 0x%x, arg: %lx\n", FPGADEV_NAME, cmd, arg);
 #endif /* DEBUG */
 
 	switch ( cmd ) {
 		case FPGA_RESET: return(reset_FPGA());
 		default: 
 #ifdef DEBUG	
-			printk(KERN_DEBUG "%s : fpga boot ioctl, cmd: 0x%x invalid\n", FPGADEV_NAME, cmd);	
+			pr_info"%s : fpga boot ioctl, cmd: 0x%x invalid\n", FPGADEV_NAME, cmd);	
 #endif /* DEBUG */
 			return(-EINVAL);
 	}
@@ -411,13 +411,13 @@ int FPGA_boot_open (struct inode *inode, struct file *file)
 	unsigned int minor;
 
 #ifdef DEBUG
-	printk(KERN_DEBUG "%s: fpga boot open entered\n", FPGADEV_NAME);
+	pr_info("%s: fpga boot open entered\n", FPGADEV_NAME);
 #endif /* DEBUG */
 
 	minor = MINOR(inode->i_rdev);
 	if (minor != boot) {
 #ifdef DEBUG
-		printk(KERN_DEBUG "%s : trying to open unsupported device\n", FPGADEV_NAME);
+		pr_info("%s : trying to open unsupported device\n", FPGADEV_NAME);
 #endif /* DEBUG */
 		return -ENODEV;
 	}
@@ -431,7 +431,7 @@ int FPGA_boot_open (struct inode *inode, struct file *file)
 	file->private_data = devdata;
 
 #ifdef DEBUG
-	printk(KERN_DEBUG "%s : device opened\n", FPGADEV_NAME);
+	pr_info("%s : device opened\n", FPGADEV_NAME);
 #endif /* DEBUG */
 	return 0;
 }
@@ -442,7 +442,7 @@ int FPGA_boot_release (struct inode *inode, struct file *file)
 	struct fpga_device_data *devdata;
 
 #ifdef DEBUG
-	printk(KERN_DEBUG "%s: fpga boot release entered\n", FPGADEV_NAME);
+	pr_info("%s: fpga boot release entered\n", FPGADEV_NAME);
 #endif /* DEBUG */
 
 	devdata = file->private_data;
@@ -451,7 +451,7 @@ int FPGA_boot_release (struct inode *inode, struct file *file)
 	file->private_data = NULL;
 
 #ifdef DEBUG
-	printk(KERN_DEBUG "%s : device closed\n", FPGADEV_NAME);
+	pr_info("%s : device closed\n", FPGADEV_NAME);
 #endif /* DEBUG */
 
 	return 0;
@@ -469,13 +469,13 @@ ssize_t FPGA_reg_read (struct file *file, char *buf, size_t count,loff_t *offset
 	char* tmp;
 
 #ifdef DEBUG
-	printk(KERN_DEBUG "%s: fpga reg read entered\n", FPGADEV_NAME);
+	pr_info("%s: fpga reg read entered\n", FPGADEV_NAME);
 #endif /* DEBUG */
 
 	if ( (*offset < FPGARegMemBase) || ((*offset + count) > (FPGARegMemBase+FPGARegMemSize)) || (count & 3)) 
 	{
 #ifdef DEBUG
-		printk(KERN_DEBUG "%s: fpga reg read adress fault\n", FPGADEV_NAME);
+		pr_info("%s: fpga reg read adress fault\n", FPGADEV_NAME);
 #endif /* DEBUG */
 		return -EFAULT; /* bad adress */
 	}
@@ -485,7 +485,7 @@ ssize_t FPGA_reg_read (struct file *file, char *buf, size_t count,loff_t *offset
 	tmp = kmalloc(count,GFP_KERNEL);
 	if (tmp == NULL) {
 #ifdef DEBUG
-		printk(KERN_DEBUG "%s : fpga reg read , kernel memory allocation failed\n", FPGADEV_NAME);
+		pr_info("%s : fpga reg read , kernel memory allocation failed\n", FPGADEV_NAME);
 #endif /* DEBUG */
 		return -ENOMEM;
 	}
@@ -502,7 +502,7 @@ ssize_t FPGA_reg_read (struct file *file, char *buf, size_t count,loff_t *offset
 
 	if (copy_to_user(buf,(void*)tmp,count)) {
 #ifdef DEBUG
-		printk(KERN_DEBUG "%s : fpga reg read, copy_to_user failed\n", FPGADEV_NAME); 
+		pr_info("%s : fpga reg read, copy_to_user failed\n", FPGADEV_NAME); 
 #endif /* DEBUG */
 		kfree(tmp);
 		return -EFAULT;
@@ -511,7 +511,7 @@ ssize_t FPGA_reg_read (struct file *file, char *buf, size_t count,loff_t *offset
 	kfree(tmp);
 
 #ifdef DEBUG
-	printk(KERN_DEBUG "%s : fpga reg read 0x%lx bytes read\n", FPGADEV_NAME, (unsigned long)(count)); 
+	pr_info("%s : fpga reg read 0x%lx bytes read\n", FPGADEV_NAME, (unsigned long)(count)); 
 #endif /* DEBUG */
 
 	return count; /* fpga reg data read sucessfully */
@@ -526,13 +526,13 @@ ssize_t FPGA_reg_write (struct file *file, const char *buf, size_t count,loff_t 
 	char* tmp;
 
 #ifdef DEBUG
-	printk(KERN_DEBUG "%s: fpga reg write entered\n", FPGADEV_NAME);
+	pr_info("%s: fpga reg write entered\n", FPGADEV_NAME);
 #endif /* DEBUG */
 
 	if ( (*offset < FPGARegMemBase) || ((*offset + count) > (FPGARegMemBase+FPGARegMemSize)) || (count & 3)) 
 	{
 #ifdef DEBUG
-		printk(KERN_DEBUG "%s: fpga reg write adress fault\n", FPGADEV_NAME);
+		pr_info("%s: fpga reg write adress fault\n", FPGADEV_NAME);
 #endif /* DEBUG */
 		return -EFAULT; /* bad adress */
 	}
@@ -542,7 +542,7 @@ ssize_t FPGA_reg_write (struct file *file, const char *buf, size_t count,loff_t 
 	tmp = kmalloc(count,GFP_KERNEL);
 	if (tmp == NULL) {
 #ifdef DEBUG
-		printk(KERN_DEBUG "%s : fpga reg write , kernel memory allocation failed\n", FPGADEV_NAME);
+		pr_info("%s : fpga reg write , kernel memory allocation failed\n", FPGADEV_NAME);
 #endif /* DEBUG */
 		return -ENOMEM;
 	}
@@ -550,7 +550,7 @@ ssize_t FPGA_reg_write (struct file *file, const char *buf, size_t count,loff_t 
 	/* copy user space data to kernel space */
 	if ( copy_from_user(tmp,buf,count)) {
 #ifdef DEBUG
-		printk(KERN_DEBUG "%s : fpga reg write, copy_from_user failed\n",FPGADEV_NAME);
+		pr_info("%s : fpga reg write, copy_from_user failed\n",FPGADEV_NAME);
 #endif /* DEBUG */
 		kfree(tmp);
 		return -EFAULT;
@@ -568,7 +568,7 @@ ssize_t FPGA_reg_write (struct file *file, const char *buf, size_t count,loff_t 
 	kfree(tmp);
 
 #ifdef DEBUG
-	printk(KERN_DEBUG "%s : fpga reg write 0x%lx bytes written\n", FPGADEV_NAME, (unsigned long)(count)); 
+	pr_info("%s : fpga reg write 0x%lx bytes written\n", FPGADEV_NAME, (unsigned long)(count)); 
 #endif /* DEBUG */
 
 	return count; /* fpga reg data written sucessfully */
@@ -583,13 +583,13 @@ int FPGA_reg_open (struct inode *inode, struct file *file)
 	unsigned int minor;
 
 #ifdef DEBUG
-	printk(KERN_DEBUG "%s: fpga reg open entered\n", FPGADEV_NAME);
+	pr_info("%s: fpga reg open entered\n", FPGADEV_NAME);
 #endif /* DEBUG */
 
 	minor = MINOR(inode->i_rdev);
 	if (minor != reg) {
 #ifdef DEBUG
-		printk(KERN_DEBUG "%s : trying to open unsupported device\n", FPGADEV_NAME);
+		pr_info("%s : trying to open unsupported device\n", FPGADEV_NAME);
 #endif /* DEBUG */
 		return -ENODEV;
 	}
@@ -597,7 +597,7 @@ int FPGA_reg_open (struct inode *inode, struct file *file)
 	if (!zFPGA_device_stat.configured)
 	{
 #ifdef DEBUG
-		printk(KERN_DEBUG "%s: fpga reg open failed (fpga not configured)\n", FPGADEV_NAME);
+		pr_info("%s: fpga reg open failed (fpga not configured)\n", FPGADEV_NAME);
 #endif /* DEBUG */
 		return -ENODEV;
 	}
@@ -611,7 +611,7 @@ int FPGA_reg_open (struct inode *inode, struct file *file)
 	file->private_data = devdata;
 
 #ifdef DEBUG
-	printk(KERN_DEBUG "%s : device opened\n", FPGADEV_NAME);
+	pr_info("%s : device opened\n", FPGADEV_NAME);
 #endif /* DEBUG */
 	return 0;
 
@@ -622,7 +622,7 @@ int FPGA_reg_release (struct inode *inode, struct file *file)
 {
 	struct fpga_device_data *devdata;
 #ifdef DEBUG
-	printk(KERN_DEBUG "%s: fpga reg release entered\n", FPGADEV_NAME);
+	pr_info("%s: fpga reg release entered\n", FPGADEV_NAME);
 #endif /* DEBUG */
 
 	devdata = file->private_data;
@@ -631,7 +631,7 @@ int FPGA_reg_release (struct inode *inode, struct file *file)
 	file->private_data = NULL;
 
 #ifdef DEBUG
-	printk(KERN_DEBUG "%s : device closed\n", FPGADEV_NAME);
+	pr_info("%s : device closed\n", FPGADEV_NAME);
 #endif /* DEBUG */
 
 	return 0;
@@ -642,7 +642,7 @@ int FPGA_reg_fasync (int fd, struct file *file, int mode)
 {
 	struct fpga_device_data *devdata;
 #ifdef DEBUG
-	printk(KERN_DEBUG "%s: fpga reg fasync entered\n", FPGADEV_NAME);
+	pr_info("%s: fpga reg fasync entered\n", FPGADEV_NAME);
 #endif
 	devdata = file->private_data;
 	return ( fasync_helper (fd, file, mode, &devdata->async_queue));
@@ -683,7 +683,7 @@ static int reset_dsp(struct file *file)
 	zFPGA_device_stat.dspbootcount[devdata->devnr - dsp1] = 0; /* status bootcount 0 */
 
 #ifdef DEBUG
-	printk(KERN_DEBUG "%s : ioctl reset DSP%d\n", FPGADEV_NAME, devdata->devnr - dsp1 +1);
+	pr_info("%s : ioctl reset DSP%d\n", FPGADEV_NAME, devdata->devnr - dsp1 +1);
 #endif /* DEBUG */
 
 	return 0;
@@ -716,26 +716,26 @@ static int boot_dsp(struct file *file, unsigned long arg)
 	
 
 #ifdef DEBUG
-	printk(KERN_DEBUG "%s : ioctl, entry boot loop\n", FPGADEV_NAME);
+	pr_info("%s : ioctl, entry boot loop\n", FPGADEV_NAME);
 #endif /* DEBUG */
 
 	for (;;) {
 		if (ActHeader.Tag > MaxTag) {
-			printk(KERN_INFO "%s : ioctl, boot invalid tag %lu found\n", FPGADEV_NAME, ActHeader.Tag); 
+			pr_info("%s : ioctl, boot invalid tag %lu found\n", FPGADEV_NAME, ActHeader.Tag); 
 			return -EFAULT;
 		}
 
 		nr  = GetByteCount(&ActHeader);
 
 #ifdef DEBUG
-	printk(KERN_DEBUG "%s : ioctl, boot datablock type %lu length 0x%lx start 0x%lx\n",FPGADEV_NAME, ActHeader.Tag, nr, ActHeader.Adress); 
+	pr_info"%s : ioctl, boot datablock type %lu length 0x%lx start 0x%lx\n",FPGADEV_NAME, ActHeader.Tag, nr, ActHeader.Adress); 
 #endif /* DEBUG */
 
 		if (nr > 0) { /* are there any bytes to send ? */
 			KMem = kmalloc(nr,GFP_KERNEL);
 			if (KMem == NULL) {
 #ifdef DEBUG
-				printk(KERN_DEBUG "%s : ioctl boot memory allocation failed\n", FPGADEV_NAME);
+				pr_info("%s : ioctl boot memory allocation failed\n", FPGADEV_NAME);
 #endif /* DEBUG */
 				return -ENOMEM;
 			}
@@ -743,7 +743,7 @@ static int boot_dsp(struct file *file, unsigned long arg)
 
 			if ( copy_from_user(KMem,UserData,nr) ) {
 #ifdef DEBUG
-				printk(KERN_DEBUG "%s : ioctl, reading boot data for dsp failed\n", FPGADEV_NAME); 
+				pr_info("%s : ioctl, reading boot data for dsp failed\n", FPGADEV_NAME); 
 #endif /* DEBUG */
 				kfree(KMem);
 				return -EFAULT;
@@ -764,14 +764,14 @@ static int boot_dsp(struct file *file, unsigned long arg)
 		}
 
 #ifdef DEBUG
-		printk(KERN_DEBUG "%s : ioctl, boot datablock type %lx done\n", FPGADEV_NAME, ActHeader.Tag); 
+		pr_info("%s : ioctl, boot datablock type %lx done\n", FPGADEV_NAME, ActHeader.Tag); 
 #endif /* DEBUG */
 
 		if (ActHeader.Tag == FinalInit) break; /* we have finished */
 
 		if ( copy_from_user(&ActHeader,UserData,12) ) { /* read the next header */
 #ifdef DEBUG
-			printk(KERN_DEBUG "%s : ioctl, reading boot header information for dsp failed\n", FPGADEV_NAME); 
+			pr_info("%s : ioctl, reading boot header information for dsp failed\n", FPGADEV_NAME); 
 #endif /* DEBUG */
 			return -EFAULT;
 		}
@@ -797,7 +797,7 @@ static int boot_dsp(struct file *file, unsigned long arg)
 		}
 	}	
 #ifdef DEBUG
-	printk(KERN_DEBUG "%s : ioctl, booting dsp%d sucessful\n", FPGADEV_NAME, devdata->devnr - dsp1 + 1); 
+	pr_info("%s : ioctl, booting dsp%d sucessful\n", FPGADEV_NAME, devdata->devnr - dsp1 + 1); 
 #endif /* DEBUG */
 
 	return 0;
@@ -816,7 +816,7 @@ static int int_dsp(struct file *file)
 	writel(adr+ DSPCTRL, tmp | IRQ_2_DSP);
 
 #ifdef DEBUG
-	printk(KERN_DEBUG "%s : ioctl IRQ_2_DSP generated for dsp%d\n", FPGADEV_NAME, devdata->devnr - dsp1 + 1);
+	pr_info("%s : ioctl IRQ_2_DSP generated for dsp%d\n", FPGADEV_NAME, devdata->devnr - dsp1 + 1);
 #endif /* DEBUG */
 
 	return 0;
@@ -835,7 +835,7 @@ static int int_dsp_enable(struct file *file)
 	writel(adr+DSPCFG, tmp | DSPIRQ_ENABLE);
 
 #ifdef DEBUG
-	printk(KERN_DEBUG "%s : ioctl DSPIRQ enabled for dsp%d\n", FPGADEV_NAME, devdata->devnr - dsp1 + 1);
+	pr_info("%s : ioctl DSPIRQ enabled for dsp%d\n", FPGADEV_NAME, devdata->devnr - dsp1 + 1);
 #endif /* DEBUG */
 
 	return 0;
@@ -854,7 +854,7 @@ static int int_dsp_disable(struct file *file)
 	writel(adr+DSPCFG, tmp & (~DSPIRQ_ENABLE));
 	
 #ifdef DEBUG
-	printk(KERN_DEBUG "%s : ioctl DSPIRQ disabled for dsp%d\n", FPGADEV_NAME, devdata->devnr - dsp1 + 1);
+	pr_info("%s : ioctl DSPIRQ disabled for dsp%d\n", FPGADEV_NAME, devdata->devnr - dsp1 + 1);
 #endif /* DEBUG */
 
 	return 0;
@@ -871,7 +871,7 @@ static int read_io(struct file *file, unsigned long arg)
 	adr = devdata->base_adr;
 	tmp = readl(adr + arg);
 #ifdef DEBUG
-	printk(KERN_DEBUG "%s : ioctl READ_IO for dsp%d = 0x%lx\n", FPGADEV_NAME, devdata->devnr - dsp1 + 1,tmp);
+	pr_info("%s : ioctl READ_IO for dsp%d = 0x%lx\n", FPGADEV_NAME, devdata->devnr - dsp1 + 1,tmp);
 #endif /* DEBUG */
 
 	return (int) tmp;
@@ -893,12 +893,12 @@ ssize_t adspdev_read (struct file *file, char *buf, size_t count,loff_t *offset)
 	char* tmp;
 
 #ifdef DEBUG
-	printk(KERN_DEBUG "%s : dsp read entered startadr: 0x%lx, length: 0x%lx\n",FPGADEV_NAME,(unsigned long)(*offset),(unsigned long) count);
+	pr_info("%s : dsp read entered startadr: 0x%lx, length: 0x%lx\n",FPGADEV_NAME,(unsigned long)(*offset),(unsigned long) count);
 #endif /* DEBUG */
 	
 	if ( (*offset < DSPDataMemBase) ||  ((*offset + count) > DSPDataMemTop) || (count & 3)) {
 #ifdef DEBUG
-		printk(KERN_DEBUG "%s: dsp read adress fault\n", FPGADEV_NAME);
+		pr_info("%s: dsp read adress fault\n", FPGADEV_NAME);
 #endif /* DEBUG */
 		return -EFAULT; /* bad adress */
 	}
@@ -906,7 +906,7 @@ ssize_t adspdev_read (struct file *file, char *buf, size_t count,loff_t *offset)
 	tmp = kmalloc(count,GFP_KERNEL);
 	if (tmp == NULL) {
 #ifdef DEBUG
-		printk(KERN_DEBUG "%s : dsp read , kernel memory allocation failed\n", FPGADEV_NAME);
+		pr_info("%s : dsp read , kernel memory allocation failed\n", FPGADEV_NAME);
 #endif /* DEBUG */
 		return -ENOMEM;
 	}
@@ -928,7 +928,7 @@ ssize_t adspdev_read (struct file *file, char *buf, size_t count,loff_t *offset)
 	for (i = 0;i < len;i++,dest++) {
 		temp = readl(adr + SERIAL);
 		*dest = temp;
-		printk(KERN_DEBUG "%s : dsp read data 0x%lx\n", FPGADEV_NAME, temp);
+		pr_info("%s : dsp read data 0x%lx\n", FPGADEV_NAME, temp);
 	}
 #else
 	for (i = 0;i < len;i++,dest++) 
@@ -938,7 +938,7 @@ ssize_t adspdev_read (struct file *file, char *buf, size_t count,loff_t *offset)
 	
 	if (copy_to_user(buf,(void*)tmp,count)) {
 #ifdef DEBUG
-		printk(KERN_DEBUG "%s : dsp read, copy_to_user failed\n", FPGADEV_NAME); 
+		pr_info("%s : dsp read, copy_to_user failed\n", FPGADEV_NAME); 
 #endif /* DEBUG */
 		kfree(tmp);
 		return -EFAULT;
@@ -947,7 +947,7 @@ ssize_t adspdev_read (struct file *file, char *buf, size_t count,loff_t *offset)
 	kfree(tmp);
 
 #ifdef DEBUG
-	printk(KERN_DEBUG "%s : dsp%d read 0x%lx bytes read\n", FPGADEV_NAME, devdata->devnr -dsp1 +1, (unsigned long)(count)); 
+	pr_info("%s : dsp%d read 0x%lx bytes read\n", FPGADEV_NAME, devdata->devnr -dsp1 +1, (unsigned long)(count)); 
 #endif /* DEBUG */
 
 	return count; /* data read from dsp sucessfully */
@@ -966,12 +966,12 @@ ssize_t adspdev_write (struct file *file, const char *buf, size_t count,loff_t *
 	char* tmp;
 
 #ifdef DEBUG
-	printk(KERN_DEBUG "%s : dsp write entered startadr: 0x%lx, length: 0x%lx\n",FPGADEV_NAME,(unsigned long)(*offset),(unsigned long) count);
+	pr_info("%s : dsp write entered startadr: 0x%lx, length: 0x%lx\n",FPGADEV_NAME,(unsigned long)(*offset),(unsigned long) count);
 #endif /* DEBUG */
 	
 	if ( (*offset < DSPDataMemBase) ||  ((*offset + count) > DSPDataMemTop) || (count & 3)) {
 #ifdef DEBUG
-		printk(KERN_DEBUG "%s: dsp write adress fault\n", FPGADEV_NAME);
+		pr_info("%s: dsp write adress fault\n", FPGADEV_NAME);
 #endif /* DEBUG */
 		return -EFAULT; /* bad adress */
 	}
@@ -979,7 +979,7 @@ ssize_t adspdev_write (struct file *file, const char *buf, size_t count,loff_t *
 	tmp = kmalloc(count,GFP_KERNEL);
 	if (tmp == NULL) {
 #ifdef DEBUG
-		printk(KERN_DEBUG "%s : dsp write , kernel memory allocation failed\n", FPGADEV_NAME);
+		pr_info("%s : dsp write , kernel memory allocation failed\n", FPGADEV_NAME);
 #endif /* DEBUG */
 		return -ENOMEM;
 	}
@@ -987,7 +987,7 @@ ssize_t adspdev_write (struct file *file, const char *buf, size_t count,loff_t *
 	/* copy user space data to kernel space */
 	if ( copy_from_user(tmp,buf,count)) {
 #ifdef DEBUG
-		printk(KERN_DEBUG "%s : dsp write, copy_from_user failed\n", FPGADEV_NAME);
+		pr_info("%s : dsp write, copy_from_user failed\n", FPGADEV_NAME);
 #endif /* DEBUG */
 		kfree(tmp); 
 		return -EFAULT;
@@ -1010,7 +1010,7 @@ ssize_t adspdev_write (struct file *file, const char *buf, size_t count,loff_t *
 #ifdef DEBUG
 	for (i = 0;i < len;i++,source++) {
 		temp = *source;
-		printk(KERN_DEBUG "%s : dsp write data 0x%lx\n", FPGADEV_NAME,temp);
+		pr_info("%s : dsp write data 0x%lx\n", FPGADEV_NAME,temp);
 		writel(adr + SERIAL, temp);
 	}
 #else
@@ -1021,7 +1021,7 @@ ssize_t adspdev_write (struct file *file, const char *buf, size_t count,loff_t *
 	kfree(tmp);
 
 #ifdef DEBUG
-	printk(KERN_DEBUG "%s : dsp%d write 0x%lx bytes written\n", FPGADEV_NAME, devdata->devnr -dsp1 +1, (unsigned long)(count)); 
+	pr_info("%s : dsp%d write 0x%lx bytes written\n", FPGADEV_NAME, devdata->devnr -dsp1 +1, (unsigned long)(count)); 
 #endif /* DEBUG */
 
 	return count; /* data written to dsp sucessfully */
@@ -1032,7 +1032,7 @@ long adspdev_ioctl( struct file *file, unsigned int cmd, unsigned long arg)
 {
 #ifdef DEBUG
 	struct fpga_device_data *devdata;
-	printk(KERN_DEBUG "%s : dsp ioctl, cmd: 0x%x, arg: %lx\n", FPGADEV_NAME, cmd, arg);
+	pr_info("%s : dsp ioctl, cmd: 0x%x, arg: %lx\n", FPGADEV_NAME, cmd, arg);
 #endif /* DEBUG */
 	switch ( cmd ) {
 		case ADSP_RESET: return(reset_dsp(file));
@@ -1044,7 +1044,7 @@ long adspdev_ioctl( struct file *file, unsigned int cmd, unsigned long arg)
 		default: 
 #ifdef DEBUG	
 			devdata = file->private_data;
-			printk(KERN_DEBUG "%s : dsp%d ioctl, cmd: 0x%x invalid\n", FPGADEV_NAME, devdata->devnr -dsp1 +1, cmd);	
+			pr_info("%s : dsp%d ioctl, cmd: 0x%x invalid\n", FPGADEV_NAME, devdata->devnr -dsp1 +1, cmd);	
 #endif /* DEBUG */
 			return(-EINVAL);
 	}
@@ -1060,12 +1060,12 @@ int adspdev_open (struct inode *inode, struct file *file)
 	minor = MINOR(inode->i_rdev);
 	
 #ifdef DEBUG
-	printk(KERN_DEBUG "%s: dsp%d open entered\n", FPGADEV_NAME, minor - dsp1 + 1);
+	pr_info("%s: dsp%d open entered\n", FPGADEV_NAME, minor - dsp1 + 1);
 #endif /*DEBUG*/
 
 	if ( (minor < dsp1) || (minor > dsp4)) {
 #ifdef DEBUG
-		printk(KERN_DEBUG "%s : trying to open unsupported device\n", FPGADEV_NAME);
+		pr_info("%s : trying to open unsupported device\n", FPGADEV_NAME);
 #endif /* DEBUG */
 		return -ENODEV;
 	}
@@ -1073,7 +1073,7 @@ int adspdev_open (struct inode *inode, struct file *file)
 	if (!zFPGA_device_stat.configured)
 	{
 #ifdef DEBUG
-		printk(KERN_DEBUG "%s: dsp open failed (fpga not configured)\n", FPGADEV_NAME);
+		pr_info("%s: dsp open failed (fpga not configured)\n", FPGADEV_NAME);
 #endif /* DEBUG */
 		return -ENODEV;
 	}
@@ -1083,7 +1083,7 @@ int adspdev_open (struct inode *inode, struct file *file)
 
 	if (id != adsp_21262_1_magic) {
 #ifdef DEBUG
-		printk(KERN_DEBUG "%s : dsp%d not available\n", FPGADEV_NAME, devdata->devnr - dsp1 + 1);
+		pr_info("%s : dsp%d not available\n", FPGADEV_NAME, devdata->devnr - dsp1 + 1);
 #endif /* DEBUG */
 		return -ENODEV;
 	}
@@ -1095,7 +1095,7 @@ int adspdev_open (struct inode *inode, struct file *file)
 	file->private_data = devdata;
 
 #ifdef DEBUG
-	printk(KERN_DEBUG "%s : device dsp%d opened\n", FPGADEV_NAME, devdata->devnr - dsp1 + 1);
+	pr_info("%s : device dsp%d opened\n", FPGADEV_NAME, devdata->devnr - dsp1 + 1);
 #endif /* DEBUG */
 	return 0;
 }
@@ -1105,7 +1105,7 @@ int adspdev_release (struct inode *inode, struct file *file)
 {
 	struct fpga_device_data *devdata;
 #ifdef DEBUG
-	printk(KERN_DEBUG "%s: dsp%d release entered\n", FPGADEV_NAME, MINOR(inode->i_rdev) - dsp1 + 1);
+	pr_info("%s: dsp%d release entered\n", FPGADEV_NAME, MINOR(inode->i_rdev) - dsp1 + 1);
 #endif /* DEBUG */
 
 	devdata = file->private_data;
@@ -1114,7 +1114,7 @@ int adspdev_release (struct inode *inode, struct file *file)
 	file -> private_data = NULL;
 
 #ifdef DEBUG
-	printk(KERN_DEBUG "%s : device closed\n", FPGADEV_NAME);
+	pr_info("%s : device closed\n", FPGADEV_NAME);
 #endif /* DEBUG */
 
 	return 0;
@@ -1126,7 +1126,7 @@ int adspdev_fasync (int fd, struct file *file, int mode)
 	struct fpga_device_data *devdata;
 	devdata = file->private_data;
 #ifdef DEBUG
-	printk(KERN_DEBUG "%s: dsp%d fasync entered\n", FPGADEV_NAME, devdata->devnr -dsp1 +1);
+	pr_info("%s: dsp%d fasync entered\n", FPGADEV_NAME, devdata->devnr -dsp1 +1);
 #endif /*DEBUG*/
 	return ( fasync_helper (fd, file, mode, &devdata->async_queue));
 }

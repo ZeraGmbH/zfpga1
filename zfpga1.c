@@ -561,8 +561,8 @@ ssize_t FPGA_reg_write (struct file *file, const char *buf, size_t count,loff_t 
 
 	while (len)
 	{
-		writew(*(buf), adr);
-		buf +=2; adr +=2; len -=2;
+		iowrite32(*(buf), adr);
+		buf +=4; adr +=4; len -=4;
 	}
 	
 	kfree(tmp);

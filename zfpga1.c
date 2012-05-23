@@ -1055,7 +1055,7 @@ int adspdev_open (struct inode *inode, struct file *file)
 {
 	struct fpga_device_data *devdata;
 	unsigned int minor;
-	unsigned long id;
+	unsigned long id, addr;
 
 	minor = MINOR(inode->i_rdev);
 	
@@ -1079,11 +1079,12 @@ int adspdev_open (struct inode *inode, struct file *file)
 	}
 
 	devdata = zFPGA_device_data + minor;
-	id = readl(devdata->base_adr + MAGICID);
+	addr = devdata->base_adr + MAGICID;
+	id = readl(addr);
 
 	if (id != adsp_21262_1_magic) {
 #ifdef DEBUG
-		pr_info("%s : dsp%d not available, id read 0x%lx\n", FPGADEV_NAME, devdata->devnr - dsp1 + 1, id);
+		pr_info("%s : dsp%d not available, id read 0x%lx from adress 0x%lx\n", FPGADEV_NAME, devdata->devnr - dsp1 + 1, id, addr);
 #endif /* DEBUG */
 		return -ENODEV;
 	}

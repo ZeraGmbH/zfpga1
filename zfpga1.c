@@ -1050,6 +1050,16 @@ long adspdev_ioctl( struct file *file, unsigned int cmd, unsigned long arg)
 	}
 }
 
+#ifdef DEBUG
+u32 gpmc_cs_read_reg(int cs, int idx)
+{
+	void __iomem *reg_addr;
+
+	reg_addr = gpmc_base + GPMC_CS0_OFFSET + (cs * GPMC_CS_SIZE) + idx;
+	return __raw_readl(reg_addr);
+}
+#endif /* DEBUG */
+
 
 int adspdev_open (struct inode *inode, struct file *file)
 {
@@ -1353,6 +1363,10 @@ static int __init fpga_config(void)
 	pr_info ("%s: Start configuring\n", FPGADEV_NAME);
 #endif // DEBUG
 
+	/* now we have to configure the cs  */
+	gpmc_cs_configure( zFPGA_platform_data.cs, GPMC_CONFIG_DEV_SIZE, GPMC_CONFIG1_DEVICESIZE_16); /* we'll take 16bit for booting as well as normal operation */
+	gpmc_cs_configure( zFPGA_platform_data.cs, GPMC_CONFIG_DEV_TYPE, GPMC_DEVICETYPE_NOR); /* async. nor flash device type with muxed adress/data pins */
+
 
 	if ( (ret = gpmc_cs_request(zFPGA_platform_data.cs, SZ_16M, &cs_mem_base)) <  0) {
 		pr_warning( "%s: CS%d already in use \n", FPGADEV_NAME, zFPGA_platform_data.cs );
@@ -1379,8 +1393,8 @@ static int __init fpga_config(void)
 	zFPGA_resources[hipMem].end = cs_mem_base + DSPHipMemBase + sizeof(dspmmap)*4 - 1;
 
 	/* now we have to configure the cs  */
-	gpmc_cs_configure( zFPGA_platform_data.cs, GPMC_CONFIG_DEV_SIZE, GPMC_CONFIG1_DEVICESIZE_16); /* we'll take 16bit for booting as well as normal operation */
-	gpmc_cs_configure( zFPGA_platform_data.cs, GPMC_CONFIG_DEV_TYPE, GPMC_DEVICETYPE_NOR); /* async. nor flash device type with muxed adress/data pins */
+//	gpmc_cs_configure( zFPGA_platform_data.cs, GPMC_CONFIG_DEV_SIZE, GPMC_CONFIG1_DEVICESIZE_16); /* we'll take 16bit for booting as well as normal operation */
+//	gpmc_cs_configure( zFPGA_platform_data.cs, GPMC_CONFIG_DEV_TYPE, GPMC_DEVICETYPE_NOR); /* async. nor flash device type with muxed adress/data pins */
 	
 	/* timing settings are not a bad idea */
 	/* but normally it shouldn't be a good idea to do it before gpmc_cs_request */
@@ -1388,7 +1402,7 @@ static int __init fpga_config(void)
 	/* but gpmc_cs_set_timings not exported from kernel,..... we changed the kernel */
 	if ( (ret = gpmc_cs_set_timings(zFPGA_platform_data.cs, &FPGA_GPMC_Timing)) <  0) {
 		pr_warning( "%s: timing settings for CS%d rejected\n", FPGADEV_NAME, zFPGA_platform_data.cs);
-		// goto free_CS;
+		goto free_CS;
 	}
 
 #ifdef DEBUG

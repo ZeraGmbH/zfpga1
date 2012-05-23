@@ -1050,16 +1050,6 @@ long adspdev_ioctl( struct file *file, unsigned int cmd, unsigned long arg)
 	}
 }
 
-#ifdef DEBUG
-u32 gpmc_cs_read_reg(int cs, int idx)
-{
-	void __iomem *reg_addr;
-
-	reg_addr = gpmc_base + GPMC_CS0_OFFSET + (cs * GPMC_CS_SIZE) + idx;
-	return __raw_readl(reg_addr);
-}
-#endif /* DEBUG */
-
 
 int adspdev_open (struct inode *inode, struct file *file)
 {

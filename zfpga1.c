@@ -161,11 +161,11 @@ static struct gpmc_timings FPGA_GPMC_Timing = {
 	adv_wr_off:10,		/* Write deassertion time */
 
 	/* WE signals timings corresponding to GPMC_CONFIG4 */
-	we_on:0 ,		/* WE assertion time */
+	we_on:20,		/* WE assertion time */
 	we_off:35 ,		/* WE deassertion time */
 
 	/* OE signals timings corresponding to GPMC_CONFIG4 */
-	oe_on:0,		/* OE assertion time */
+	oe_on:20,		/* OE assertion time */
 	oe_off:45,		/* OE deassertion time */
 
 	/* Access time and cycle time timings corresponding to GPMC_CONFIG5 */

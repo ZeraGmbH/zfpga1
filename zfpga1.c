@@ -522,6 +522,8 @@ ssize_t FPGA_reg_write (struct file *file, const char *buf, size_t count,loff_t 
 {
 	struct fpga_device_data *devdata;
 	unsigned long adr;
+	unsigned long data;
+	unsigned long *dp;
 	unsigned long len;
 	char* tmp;
 
@@ -537,7 +539,6 @@ ssize_t FPGA_reg_write (struct file *file, const char *buf, size_t count,loff_t 
 		return -EFAULT; /* bad adress */
 	}
 
-	devdata = file->private_data;
 
 	tmp = kmalloc(count,GFP_KERNEL);
 	if (tmp == NULL) {
@@ -557,12 +558,17 @@ ssize_t FPGA_reg_write (struct file *file, const char *buf, size_t count,loff_t 
 	}
 
 	adr = devdata->base_adr + *offset;
+	dp = (unsigned long*) tmp;
 	len = count;
 
 	while (len)
 	{
-		iowrite32(*(buf), adr);
-		buf +=4; adr +=4; len -=4;
+		data = *dp;
+#ifdef DEBUG
+		pr_info("%s : fpga reg write data 0x%lx\n", FPGADEV_NAME, data); 
+#endif /* DEBUG */
+		iowrite32(data, adr);
+		dp++; adr += 4; len -= 4;
 	}
 	
 	kfree(tmp);

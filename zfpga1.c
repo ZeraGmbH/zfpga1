@@ -562,7 +562,7 @@ ssize_t FPGA_reg_write (struct file *file, const char *buf, size_t count,loff_t 
 
 	pr_info("!!!!!! 3 !!!!!!\n");
 
-	adr = devdata->base_adr + *offset;
+	adr = devdata->base_adr/* + *offset*/;
 	dp = (unsigned long*) tmp;
 	len = count;
 

@@ -539,6 +539,7 @@ ssize_t FPGA_reg_write (struct file *file, const char *buf, size_t count,loff_t 
 		return -EFAULT; /* bad adress */
 	}
 
+	pr_info("!!!!!! 1 !!!!!!\n");
 
 	tmp = kmalloc(count,GFP_KERNEL);
 	if (tmp == NULL) {
@@ -547,6 +548,8 @@ ssize_t FPGA_reg_write (struct file *file, const char *buf, size_t count,loff_t 
 #endif /* DEBUG */
 		return -ENOMEM;
 	}
+
+	pr_info("!!!!!! 2 !!!!!!\n");
 
 	/* copy user space data to kernel space */
 	if ( copy_from_user(tmp,buf,count)) {
@@ -557,9 +560,13 @@ ssize_t FPGA_reg_write (struct file *file, const char *buf, size_t count,loff_t 
 		return -EFAULT;
 	}
 
+	pr_info("!!!!!! 3 !!!!!!\n");
+
 	adr = devdata->base_adr + *offset;
 	dp = (unsigned long*) tmp;
 	len = count;
+
+	pr_info("!!!!!! 4 !!!!!!\n");
 
 	while (len)
 	{

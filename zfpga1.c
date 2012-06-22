@@ -161,11 +161,11 @@ static struct gpmc_timings FPGA_GPMC_Timing = {
 	adv_wr_off:10,		/* Write deassertion time */
 
 	/* WE signals timings corresponding to GPMC_CONFIG4 */
-	we_on:20,		/* WE assertion time */
+	we_on:15,		/* WE assertion time */
 	we_off:35 ,		/* WE deassertion time */
 
 	/* OE signals timings corresponding to GPMC_CONFIG4 */
-	oe_on:20,		/* OE assertion time */
+	oe_on:15,		/* OE assertion time */
 	oe_off:45,		/* OE deassertion time */
 
 	/* Access time and cycle time timings corresponding to GPMC_CONFIG5 */
@@ -197,6 +197,7 @@ static struct file_operations fpga_boot_fops = {
 };
 
 
+static loff_t FPGA_reg_lseek (struct file *file, loff_t offset, int origin);
 static ssize_t FPGA_reg_read (struct file *file, char *buf, size_t count,loff_t *offset);
 static ssize_t FPGA_reg_write (struct file *file, const char *buf, size_t count,loff_t *offset);
 static int FPGA_reg_open (struct inode *inode, struct file *file);
@@ -206,7 +207,7 @@ static int FPGA_reg_fasync (int fd, struct file *file, int mode);
 
 static struct file_operations fpga_register_fops = {
 	owner:		THIS_MODULE,
-	llseek:		no_llseek,
+	llseek:		FPGA_reg_lseek,
 	read:		FPGA_reg_read,
 	write:		FPGA_reg_write,
 	open:		FPGA_reg_open,
@@ -215,6 +216,7 @@ static struct file_operations fpga_register_fops = {
 };
 
 
+static loff_t adspdev_lseek (struct file *file, loff_t offset, int origin);
 static ssize_t adspdev_read (struct file *file, char *buf, size_t count,loff_t *offset);
 static ssize_t adspdev_write (struct file *file, const char *buf, size_t count,loff_t *offset);
 static long adspdev_ioctl (struct file *file,unsigned int cmd, unsigned long arg);
@@ -225,10 +227,10 @@ static int adspdev_fasync (int fd, struct file *file, int mode);
 
 static struct file_operations adspdev_fops = {
 	owner:		THIS_MODULE,
-	llseek:		no_llseek,
+	llseek:		adspdev_lseek,
 	read:		adspdev_read,
 	write:		adspdev_write,
-	compat_ioctl:	adspdev_ioctl,
+	unlocked_ioctl:	adspdev_ioctl,
 	open:		adspdev_open,
 	release:	adspdev_release,
 	fasync:		adspdev_fasync,
@@ -238,7 +240,7 @@ static struct file_operations adspdev_fops = {
 static wait_queue_head_t adspdev_wqueue; /* wait queue for long duration delays when booting dsp */
 
 
-/* here we try handle irq's generated from resister part of fpga, means fpga itself */ 
+/* here we try to handle irq's generated from resister part of fpga, means fpga itself */ 
 
 static irqreturn_t FPGA_irq_isr (int irq_nr,void *dev_id)
 {
@@ -259,11 +261,11 @@ static irqreturn_t FPGA_irq_isr (int irq_nr,void *dev_id)
 }
 
 
-/* here we try handle irq's generated from adsp's */ 
+/* here we try to handle irq's generated from adsp's */ 
 
 static irqreturn_t ADSP_irq_isr (int irq_nr,void *dev_id)
 {
-	unsigned long stat;
+	unsigned long stat, adr;
 	struct fpga_device_data *devdata;
 	int i;
 
@@ -274,18 +276,18 @@ static irqreturn_t ADSP_irq_isr (int irq_nr,void *dev_id)
 
 	for (i = 0; i < 4 ; i++) {
 		devdata = zFPGA_device_data + (dsp1 + i);
-		stat = readl(devdata->base_adr + DSPSTAT) & (IS_DSP_IRQ | IS_TIMEOUT_IRQ);
+		adr = devdata->base_adr + DSPSTAT;
 #ifdef DEBUG
-		pr_info("stat irq dsp : %ld\n",stat);
+		pr_info("stat irq dsp: %ld from adress: 0x%lx\n", stat, adr);
 #endif // DEBUG
 		if (stat) {
 			if (stat & IS_DSP_IRQ) {
-				writel(devdata->base_adr + DSPSTAT, IS_DSP_IRQ); /* quit irq */
+				writel(adr, IS_DSP_IRQ); /* quit irq */
 				if (devdata->async_queue)
 					kill_fasync(&(devdata->async_queue), SIGIO, POLL_IN);
 			}
 			if (stat & IS_TIMEOUT_IRQ) {
-				writel(devdata->base_adr + DSPSTAT, IS_TIMEOUT_IRQ); /* quit irq */
+				writel(adr, IS_TIMEOUT_IRQ); /* quit irq */
 			}
 			ret = IRQ_HANDLED;
 		}
@@ -460,13 +462,25 @@ int FPGA_boot_release (struct inode *inode, struct file *file)
 
 /* fpga register device file operations */
 
+
+static loff_t FPGA_reg_lseek (struct file *file, loff_t offset, int origin)
+{
+#ifdef DEBUG
+	struct fpga_device_data *devdata;
+	devdata = file->private_data;
+	pr_info("%s lseek to adress 0x%lx \n",devdata->devname,(long)offset);
+#endif
+	file->f_pos = offset; /* only absolut positioning */
+	return offset;
+}
+
+
 ssize_t FPGA_reg_read (struct file *file, char *buf, size_t count,loff_t *offset)
 {
 	struct fpga_device_data *devdata;
 	unsigned long adr;
 	unsigned long *dest;
 	unsigned long len;
-	char* tmp;
 
 #ifdef DEBUG
 	pr_info("%s: fpga reg read entered\n", FPGADEV_NAME);
@@ -482,8 +496,8 @@ ssize_t FPGA_reg_read (struct file *file, char *buf, size_t count,loff_t *offset
 
 	devdata = file->private_data;
 
-	tmp = kmalloc(count,GFP_KERNEL);
-	if (tmp == NULL) {
+	dest = kmalloc(count,GFP_KERNEL);
+	if (dest == NULL) {
 #ifdef DEBUG
 		pr_info("%s : fpga reg read , kernel memory allocation failed\n", FPGADEV_NAME);
 #endif /* DEBUG */
@@ -491,24 +505,23 @@ ssize_t FPGA_reg_read (struct file *file, char *buf, size_t count,loff_t *offset
 	}
 
 	adr = devdata->base_adr + *offset;
-	dest = (unsigned long*) tmp;
 	len = count >> 2;
 
 	while (len--)
 	{
-		*(dest++) = readl(adr);
-		adr +=4;
+		*(dest++) = ioread32(adr);
+		adr += 4;
 	}
 
-	if (copy_to_user(buf,(void*)tmp,count)) {
+	if (copy_to_user(buf,(void*)dest,count)) {
 #ifdef DEBUG
 		pr_info("%s : fpga reg read, copy_to_user failed\n", FPGADEV_NAME); 
 #endif /* DEBUG */
-		kfree(tmp);
+		kfree(dest);
 		return -EFAULT;
 	}
 	
-	kfree(tmp);
+	kfree(dest);
 
 #ifdef DEBUG
 	pr_info("%s : fpga reg read 0x%lx bytes read\n", FPGADEV_NAME, (unsigned long)(count)); 
@@ -525,7 +538,7 @@ ssize_t FPGA_reg_write (struct file *file, const char *buf, size_t count,loff_t 
 	unsigned long data;
 	unsigned long *dp;
 	unsigned long len;
-	char* tmp;
+
 
 #ifdef DEBUG
 	pr_info("%s: fpga reg write entered\n", FPGADEV_NAME);
@@ -539,46 +552,40 @@ ssize_t FPGA_reg_write (struct file *file, const char *buf, size_t count,loff_t 
 		return -EFAULT; /* bad adress */
 	}
 
-	pr_info("!!!!!! 1 !!!!!!\n");
+	devdata = file->private_data;
 
-	tmp = kmalloc(count,GFP_KERNEL);
-	if (tmp == NULL) {
+	dp = kmalloc(count,GFP_KERNEL);
+	if (dp == NULL) {
 #ifdef DEBUG
 		pr_info("%s : fpga reg write , kernel memory allocation failed\n", FPGADEV_NAME);
 #endif /* DEBUG */
 		return -ENOMEM;
 	}
 
-	pr_info("!!!!!! 2 !!!!!!\n");
-
 	/* copy user space data to kernel space */
-	if ( copy_from_user(tmp,buf,count)) {
+	if ( copy_from_user(dp,buf,count)) {
 #ifdef DEBUG
 		pr_info("%s : fpga reg write, copy_from_user failed\n",FPGADEV_NAME);
 #endif /* DEBUG */
-		kfree(tmp);
+		kfree(dp);
 		return -EFAULT;
 	}
 
-	pr_info("!!!!!! 3 !!!!!!\n");
-
-	adr = devdata->base_adr/* + *offset*/;
-	dp = (unsigned long*) tmp;
-	len = count;
-
-	pr_info("!!!!!! 4 !!!!!!\n");
-
-	while (len)
+	adr = devdata->base_adr + *offset;
+	len = count >> 2;
+	
+	while (len--)
 	{
 		data = *dp;
 #ifdef DEBUG
-		pr_info("%s : fpga reg write data 0x%lx\n", FPGADEV_NAME, data); 
+		pr_info("%s : fpga reg write data 0x%lx to adr 0x%lx\n", FPGADEV_NAME, data, adr); 
 #endif /* DEBUG */
+
 		iowrite32(data, adr);
-		dp++; adr += 4; len -= 4;
+		dp++;adr += 4;
 	}
 	
-	kfree(tmp);
+	kfree(dp);
 
 #ifdef DEBUG
 	pr_info("%s : fpga reg write 0x%lx bytes written\n", FPGADEV_NAME, (unsigned long)(count)); 
@@ -690,9 +697,9 @@ static int reset_dsp(struct file *file)
 	unsigned long tmp;
 
 	devdata = file->private_data;
-	adr = devdata->base_adr;
-	tmp = readl(adr+DSPCTRL);
-	writel(adr+DSPCTRL, tmp | RESET_DSP);
+	adr = devdata->base_adr + DSPCTRL;
+	tmp = ioread32(adr);
+	iowrite32(tmp | RESET_DSP, adr);
 	zFPGA_device_stat.dspbootcount[devdata->devnr - dsp1] = 0; /* status bootcount 0 */
 
 #ifdef DEBUG
@@ -717,8 +724,8 @@ static int boot_dsp(struct file *file, unsigned long arg)
 
 	/* reset dsp before booting and clear all other settings*/
 
-	tmp = readl(adr + DSPCTRL);
-	writel(adr + DSPCTRL, tmp | RESET_DSP);
+	tmp = ioread32(adr + DSPCTRL);
+	iowrite32(tmp | RESET_DSP, adr + DSPCTRL);
 	udelay(200); // dsp requires 4096 CLKIN (25MHz) cycles after deasserting reset
 	zFPGA_device_stat.dspbootcount[devdata->devnr - dsp1] = 0;
 	
@@ -766,7 +773,7 @@ static int boot_dsp(struct file *file, unsigned long arg)
 			data = (unsigned long*) KMem;
 						
 			for (i = 0;i < (nr >>2);i++,data++)
-				writel(adr + SPI, *data); 
+				iowrite32(*data, adr + SPI); 
 
 			/* writes all the data of the desired block to the SPI */
 
@@ -792,9 +799,9 @@ static int boot_dsp(struct file *file, unsigned long arg)
 		UserData += 12;
 
 		/* and now we send the next boot header via SPI */		
-		writel(adr + SPI, ActHeader.Tag); 
-		writel(adr + SPI, ActHeader.Count);
-		writel(adr + SPI, ActHeader.Adress);
+		iowrite32(ActHeader.Tag, adr + SPI); 
+		iowrite32(ActHeader.Count,adr + SPI);
+		iowrite32(ActHeader.Adress, adr + SPI);
 
 		zFPGA_device_stat.dspbootcount[devdata->devnr - dsp1] += 12;
 		
@@ -824,9 +831,9 @@ static int int_dsp(struct file *file)
 	unsigned long tmp;
 
 	devdata = file->private_data;
-	adr = devdata->base_adr;
-	tmp = readl(adr + DSPCTRL);
-	writel(adr+ DSPCTRL, tmp | IRQ_2_DSP);
+	adr = devdata->base_adr + DSPCTRL;
+	tmp = ioread32(adr);
+	iowrite32(tmp | IRQ_2_DSP, adr);
 
 #ifdef DEBUG
 	pr_info("%s : ioctl IRQ_2_DSP generated for dsp%d\n", FPGADEV_NAME, devdata->devnr - dsp1 + 1);
@@ -843,9 +850,9 @@ static int int_dsp_enable(struct file *file)
 	unsigned long tmp;
 
 	devdata = file->private_data;
-	adr = devdata->base_adr;
-	tmp = readl(adr+DSPCFG);
-	writel(adr+DSPCFG, tmp | DSPIRQ_ENABLE);
+	adr = devdata->base_adr + DSPCFG;
+	tmp = ioread32(adr);
+	iowrite32(tmp | DSPIRQ_ENABLE, adr);
 
 #ifdef DEBUG
 	pr_info("%s : ioctl DSPIRQ enabled for dsp%d\n", FPGADEV_NAME, devdata->devnr - dsp1 + 1);
@@ -862,9 +869,9 @@ static int int_dsp_disable(struct file *file)
 	unsigned long tmp;
 
 	devdata = file->private_data;
-	adr = devdata->base_adr;
-	tmp = readl(adr+DSPCFG);
-	writel(adr+DSPCFG, tmp & (~DSPIRQ_ENABLE));
+	adr = devdata->base_adr + DSPCFG;
+	tmp = ioread32(adr);
+	iowrite32(tmp & (~DSPIRQ_ENABLE), adr);
 	
 #ifdef DEBUG
 	pr_info("%s : ioctl DSPIRQ disabled for dsp%d\n", FPGADEV_NAME, devdata->devnr - dsp1 + 1);
@@ -881,8 +888,8 @@ static int read_io(struct file *file, unsigned long arg)
 	unsigned long tmp;
 
 	devdata = file->private_data;
-	adr = devdata->base_adr;
-	tmp = readl(adr + arg);
+	adr = devdata->base_adr + (arg << 2);
+	tmp = ioread32(adr);
 #ifdef DEBUG
 	pr_info("%s : ioctl READ_IO for dsp%d = 0x%lx\n", FPGADEV_NAME, devdata->devnr - dsp1 + 1,tmp);
 #endif /* DEBUG */
@@ -893,6 +900,19 @@ static int read_io(struct file *file, unsigned long arg)
 
 
 /* adsp device(s) file operations */
+
+
+static loff_t adspdev_lseek (struct file *file, loff_t offset, int origin)
+{
+#ifdef DEBUG
+	struct fpga_device_data *devdata;
+	devdata = file->private_data;
+	pr_info("%s lseek to adress 0x%lx \n",devdata->devname,(long)offset);
+#endif
+	file->f_pos = offset; /* only absolut positioning */
+	return offset;
+}
+
 
 ssize_t adspdev_read (struct file *file, char *buf, size_t count,loff_t *offset)
 {
@@ -931,21 +951,21 @@ ssize_t adspdev_read (struct file *file, char *buf, size_t count,loff_t *offset)
 	len = count >> 2;
 
 	/* serial interface and dma initialization */
-	writel(adr + SPI, DSPREAD);
-	writel(adr + SPI, (unsigned long)*offset);
-	writel(adr + SPI, len);
+	iowrite32(DSPREAD, adr + SPI);
+	iowrite32((unsigned long)*offset,adr + SPI);
+	iowrite32(len, adr + SPI);
 
 	udelay(100); /* give the dsp 100 uS for initialzing serial and dma */
 
 #ifdef DEBUG
 	for (i = 0;i < len;i++,dest++) {
-		temp = readl(adr + SERIAL);
+		temp = ioread32(adr + SERIAL);
 		*dest = temp;
 		pr_info("%s : dsp read data 0x%lx\n", FPGADEV_NAME, temp);
 	}
 #else
 	for (i = 0;i < len;i++,dest++) 
-		*dest = readl(adr + SERIAL);
+		*dest = ioread32(adr + SERIAL);
 #endif /* DEBUG */
 	
 	
@@ -1013,9 +1033,9 @@ ssize_t adspdev_write (struct file *file, const char *buf, size_t count,loff_t *
 	len = count >> 2;
 
 	/* serial interface and dma initialization */
-	writel(adr + SPI, DSPWRITE);
-	writel(adr + SPI, (unsigned long)*offset);
-	writel(adr + SPI, len);
+	iowrite32(DSPWRITE, adr + SPI);
+	iowrite32((unsigned long)*offset, adr + SPI);
+	iowrite32(len, adr + SPI);
 
 	udelay(100); /* give the dsp 100 uS for initialzing serial and dma */
 
@@ -1024,11 +1044,11 @@ ssize_t adspdev_write (struct file *file, const char *buf, size_t count,loff_t *
 	for (i = 0;i < len;i++,source++) {
 		temp = *source;
 		pr_info("%s : dsp write data 0x%lx\n", FPGADEV_NAME,temp);
-		writel(adr + SERIAL, temp);
+		iowrite32(temp, adr + SERIAL);
 	}
 #else
 	for (i = 0;i < len;i++,source++)
-		writel(adr +SERIAL, *source);
+		iowrite32(*source, adr +SERIAL);
 #endif // DEBUG
 
 	kfree(tmp);
@@ -1093,7 +1113,7 @@ int adspdev_open (struct inode *inode, struct file *file)
 
 	devdata = zFPGA_device_data + minor;
 	addr = devdata->base_adr + MAGICID;
-	id = readl(addr);
+	id = ioread32(addr);
 
 	if (id != adsp_21262_1_magic) {
 #ifdef DEBUG
@@ -1392,7 +1412,7 @@ static int __init fpga_config(void)
 	zFPGA_resources[hipMem].end = cs_mem_base + DSPHipMemBase + sizeof(dspmmap)*4 - 1;
 
 	/* now we have to configure the cs  */
-	gpmc_cs_configure( zFPGA_platform_data.cs, GPMC_CONFIG_DEV_SIZE, GPMC_CONFIG1_DEVICESIZE_16); /* we'll take 16bit for booting as well as normal operation */
+	// gpmc_cs_configure( zFPGA_platform_data.cs, GPMC_CONFIG_DEV_SIZE, GPMC_CONFIG1_DEVICESIZE_16); /* we'll take 16bit for booting as well as normal operation */
 	gpmc_cs_configure( zFPGA_platform_data.cs, GPMC_CONFIG_DEV_TYPE, GPMC_DEVICETYPE_NOR); /* async. nor flash device type with muxed adress/data pins */
 	
 	/* timing settings are not a bad idea */

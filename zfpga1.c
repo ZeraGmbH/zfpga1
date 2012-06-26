@@ -277,17 +277,24 @@ static irqreturn_t ADSP_irq_isr (int irq_nr,void *dev_id)
 	for (i = 0; i < 4 ; i++) {
 		devdata = zFPGA_device_data + (dsp1 + i);
 		adr = devdata->base_adr + DSPSTAT;
+		stat = ioread32(adr);
 #ifdef DEBUG
 		pr_info("stat irq dsp: %ld from adress: 0x%lx\n", stat, adr);
 #endif // DEBUG
 		if (stat) {
 			if (stat & IS_DSP_IRQ) {
-				writel(adr, IS_DSP_IRQ); /* quit irq */
+#ifdef DEBUG
+				pr_info("irq dsp reset at adress: 0x%lx\n", adr);
+#endif // DEBUG
+				iowrite32( IS_DSP_IRQ, adr); /* quit irq */
 				if (devdata->async_queue)
 					kill_fasync(&(devdata->async_queue), SIGIO, POLL_IN);
 			}
 			if (stat & IS_TIMEOUT_IRQ) {
-				writel(adr, IS_TIMEOUT_IRQ); /* quit irq */
+#ifdef DEBUG
+				pr_info("irq timeout reset at adress: 0x%lx\n", adr);
+#endif // DEBUG
+				iowrite32( IS_TIMEOUT_IRQ, adr); /* quit irq */
 			}
 			ret = IRQ_HANDLED;
 		}

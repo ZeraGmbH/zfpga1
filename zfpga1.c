@@ -23,7 +23,7 @@
 #include "zfpga1.h"
 
 /* If you want debugging uncomment: */
-#define DEBUG 1
+//#define DEBUG 1
 
 /* and please forgive me....it´s my first kernel driver... */
 

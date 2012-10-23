@@ -23,7 +23,7 @@
 #include "zfpga1.h"
 
 /* If you want debugging uncomment: */
-#define DEBUG 1
+//#define DEBUG 1
 
 /* and please forgive me....it´s my first kernel driver... */
 
@@ -170,7 +170,7 @@ static struct gpmc_timings FPGA_GPMC_Timing = {
 
 	/* Access time and cycle time timings corresponding to GPMC_CONFIG5 */
 	page_burst_access:30,	/* Multiple access word delay */
-	access:50,		/* Start-cycle to first data valid delay */
+	access:50,		/* Start-cycle to first data valid delay */ /* !!!!! p.l. this is read access time i think !!!!! */
 	rd_cycle:60,		/* Total read cycle time */
 	wr_cycle:60,		/* Total write cycle time */
 

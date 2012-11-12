@@ -733,7 +733,7 @@ static int boot_dsp(struct file *file, unsigned long arg)
 
 	tmp = ioread32(adr + DSPCTRL);
 	iowrite32(tmp | RESET_DSP, adr + DSPCTRL);
-	udelay(200); // dsp requires 4096 CLKIN (25MHz) cycles after deasserting reset
+	udelay(400); // dsp requires 4096 CLKIN (25MHz) cycles after deasserting reset
 	zFPGA_device_stat.dspbootcount[devdata->devnr - dsp1] = 0;
 	
 	/* the first data block to load is the dsp´s bootstrap loader */
@@ -786,7 +786,7 @@ static int boot_dsp(struct file *file, unsigned long arg)
 
 			zFPGA_device_stat.dspbootcount[devdata->devnr - dsp1] += nr; /* counting the bytes booted */
 			kfree(KMem);
-			msleep(10);
+			msleep(20);
 			/*sleep_on_timeout (&adspdev_wqueue,1+ HZ/100); */ /* for each boot block wait at least 10 mS */
 
 		}
@@ -822,7 +822,7 @@ static int boot_dsp(struct file *file, unsigned long arg)
 			case	InitL48:	break;
 			case 	InitL64:	break;
 			/*default: sleep_on_timeout (&adspdev_wqueue,1+(2*HZ)/100); *//* -> min. (1/HZ)*1000 mS   normal: 2ms  (Count * 100nS) */
-			default: msleep(20); /* should be 2ms + count*100nS, count is max 1.5*2^16 */
+			default: msleep(40); /* should be 2ms + count*100nS, count is max 1.5*2^16 */
 		}
 	}	
 #ifdef DEBUG

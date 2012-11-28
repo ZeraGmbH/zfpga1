@@ -938,7 +938,9 @@ ssize_t adspdev_read (struct file *file, char *buf, size_t count,loff_t *offset)
 	pr_info("%s : dsp read entered startadr: 0x%lx, length: 0x%lx\n",FPGADEV_NAME,(unsigned long)(*offset),(unsigned long) count);
 #endif /* DEBUG */
 	
-	if ( (*offset < DSPDataMemBase) ||  ((*offset + count) > DSPDataMemTop) || (count & 3)) {
+	len = count >> 2;
+	
+	if ( (*offset < DSPDataMemBase) ||  ((*offset + len) > DSPDataMemTop) || (count & 3)) {
 #ifdef DEBUG
 		pr_info("%s: dsp read adress fault\n", FPGADEV_NAME);
 #endif /* DEBUG */
@@ -957,7 +959,6 @@ ssize_t adspdev_read (struct file *file, char *buf, size_t count,loff_t *offset)
 
 	adr = devdata->base_adr;
 	dest = (unsigned long*) tmp;
-	len = count >> 2;
 
 	/* serial interface and dma initialization */
 	iowrite32(DSPREAD, adr + SPI);
@@ -1011,7 +1012,9 @@ ssize_t adspdev_write (struct file *file, const char *buf, size_t count,loff_t *
 	pr_info("%s : dsp write entered startadr: 0x%lx, length: 0x%lx\n",FPGADEV_NAME,(unsigned long)(*offset),(unsigned long) count);
 #endif /* DEBUG */
 	
-	if ( (*offset < DSPDataMemBase) ||  ((*offset + count) > DSPDataMemTop) || (count & 3)) {
+	len = count >> 2;
+	
+	if ( (*offset < DSPDataMemBase) ||  ((*offset + len) > DSPDataMemTop) || (count & 3)) {
 #ifdef DEBUG
 		pr_info("%s: dsp write adress fault\n", FPGADEV_NAME);
 #endif /* DEBUG */
@@ -1039,8 +1042,7 @@ ssize_t adspdev_write (struct file *file, const char *buf, size_t count,loff_t *
 
 	adr = devdata->base_adr;
 	source = (unsigned long*) tmp;
-	len = count >> 2;
-
+	
 	/* serial interface and dma initialization */
 	iowrite32(DSPWRITE, adr + SPI);
 	iowrite32((unsigned long)*offset, adr + SPI);

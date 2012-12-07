@@ -1272,7 +1272,7 @@ static int __devinit zFPGA_probe(struct platform_device *pdev)
 	zFPGA_device_data[reg].base_adr = (unsigned long)ioremap(res_ioreg->start, res_ioreg->end - res_ioreg->start + 1);
 
 #ifdef DEBUG
-	pr_info ( "%s : request_mem_region for %s 0x%lx bytes at adr 0x%lx successful\n", FPGADEV_NAME, RESOURCE_NAME_REG, (unsigned long)resource_size(res_ioreg), (unsigned long) res_ioreg->start);
+	pr_info ( "%s : request_mem_region for %s 0x%lx bytes at adr 0x%lx remapped to 0x%lx successful\n", FPGADEV_NAME, RESOURCE_NAME_REG, (unsigned long)resource_size(res_ioreg), (unsigned long) res_ioreg->start,zFPGA_device_data[reg].base_adr);
 #endif	/* DEBUG */
 
 	if (!request_mem_region(res_iohip->start, resource_size(res_iohip), FPGADEV_NAME)) {
@@ -1286,7 +1286,7 @@ static int __devinit zFPGA_probe(struct platform_device *pdev)
 
 
 #ifdef DEBUG
-	pr_info ( "%s : request_mem_region for %s 0x%lx bytes at adr 0x%lx successful\n", FPGADEV_NAME, RESOURCE_NAME_HIP, (unsigned long) resource_size(res_iohip), (unsigned long) res_iohip->start);
+	pr_info ( "%s : request_mem_region for %s 0x%lx bytes at adr 0x%lx remapped to 0x%lx successful\n", FPGADEV_NAME, RESOURCE_NAME_HIP, (unsigned long) resource_size(res_iohip), (unsigned long) res_iohip->start,zFPGA_device_data[dsp1].base_adr);
 #endif	/* DEBUG */
 
 	/* int request_irq(unsigned int irq, irqreturn_t (*handler) (int, void*, struct pt_regs*), unsigned long irqflags, const char* devname, void* dev_id)*/

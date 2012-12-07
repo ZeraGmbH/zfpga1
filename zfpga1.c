@@ -23,7 +23,7 @@
 #include "zfpga1.h"
 
 /* If you want debugging uncomment: */
-#define DEBUG 1
+//#define DEBUG 1
 
 /* and please forgive me....it´s my first kernel driver... */
 
@@ -487,6 +487,7 @@ ssize_t FPGA_reg_read (struct file *file, char *buf, size_t count,loff_t *offset
 	struct fpga_device_data *devdata;
 	unsigned long adr;
 	unsigned long *dest;
+	unsigned long data;
 	unsigned long len;
 
 #ifdef DEBUG
@@ -521,7 +522,9 @@ ssize_t FPGA_reg_read (struct file *file, char *buf, size_t count,loff_t *offset
 	
 	while (len--)
 	{
-		*(dest++) = ioread32(adr);
+		data = ioread32(adr);
+		pr_info("%s : fpga reg read : 0x%lx\n", FPGADEV_NAME, data);
+		*(dest++) = data;
 		adr += 4;
 	}
 

@@ -493,7 +493,9 @@ ssize_t FPGA_reg_read (struct file *file, char *buf, size_t count,loff_t *offset
 	pr_info("%s: fpga reg read entered\n", FPGADEV_NAME);
 #endif /* DEBUG */
 
-	if ( (*offset < FPGARegMemBase) || ((*offset + count) > (FPGARegMemBase+FPGARegMemSize)) || (count & 3)) 
+	len = count >> 2;
+	
+	if ( (*offset < FPGARegMemBase) || ((*offset + len) > (FPGARegMemBase+FPGARegMemSize)) || (count & 3)) 
 	{
 #ifdef DEBUG
 		pr_info("%s: fpga reg read adress fault\n", FPGADEV_NAME);
@@ -512,8 +514,7 @@ ssize_t FPGA_reg_read (struct file *file, char *buf, size_t count,loff_t *offset
 	}
 
 	adr = devdata->base_adr + *offset;
-	len = count >> 2;
-
+	
 #ifdef DEBUG
 		pr_info("%s : fpga reg read , start adress: 0x%lx\n", FPGADEV_NAME, adr);
 #endif /* DEBUG */	
@@ -555,7 +556,9 @@ ssize_t FPGA_reg_write (struct file *file, const char *buf, size_t count,loff_t 
 	pr_info("%s: fpga reg write entered\n", FPGADEV_NAME);
 #endif /* DEBUG */
 
-	if ( (*offset < FPGARegMemBase) || ((*offset + count) > (FPGARegMemBase+FPGARegMemSize)) || (count & 3)) 
+	len = count >> 2;
+	
+	if ( (*offset < FPGARegMemBase) || ((*offset + len) > (FPGARegMemBase+FPGARegMemSize)) || (count & 3)) 
 	{
 #ifdef DEBUG
 		pr_info("%s: fpga reg write adress fault\n", FPGADEV_NAME);
@@ -583,7 +586,6 @@ ssize_t FPGA_reg_write (struct file *file, const char *buf, size_t count,loff_t 
 	}
 
 	adr = devdata->base_adr + *offset;
-	len = count >> 2;
 	
 	while (len--)
 	{

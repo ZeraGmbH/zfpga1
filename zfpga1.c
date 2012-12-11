@@ -489,7 +489,8 @@ ssize_t FPGA_reg_read (struct file *file, char *buf, size_t count,loff_t *offset
 	unsigned long *dest;
 	unsigned long data;
 	unsigned long len;
-
+	unsigned long size;
+	
 #ifdef DEBUG
 	pr_info("%s: fpga reg read entered\n", FPGADEV_NAME);
 #endif /* DEBUG */
@@ -507,7 +508,10 @@ ssize_t FPGA_reg_read (struct file *file, char *buf, size_t count,loff_t *offset
 
 	devdata = file->private_data;
 
-	dest = kmalloc(count,GFP_KERNEL);
+	size = (count < 32) ? 32 : count;
+	
+	dest = kmalloc(size,GFP_KERNEL);
+	
 	if (dest == NULL) {
 #ifdef DEBUG
 		pr_info("%s : fpga reg read , kernel memory allocation failed\n", FPGADEV_NAME);
@@ -559,7 +563,7 @@ ssize_t FPGA_reg_write (struct file *file, const char *buf, size_t count,loff_t 
 	unsigned long data;
 	unsigned long *dp;
 	unsigned long len;
-
+	unsigned long size;
 
 #ifdef DEBUG
 	pr_info("%s: fpga reg write entered\n", FPGADEV_NAME);
@@ -577,7 +581,9 @@ ssize_t FPGA_reg_write (struct file *file, const char *buf, size_t count,loff_t 
 
 	devdata = file->private_data;
 
-	dp = kmalloc(count,GFP_KERNEL);
+	size = (count < 32) ? 32 : count;
+	
+	dp = kmalloc(size,GFP_KERNEL);
 	if (dp == NULL) {
 #ifdef DEBUG
 		pr_info("%s : fpga reg write , kernel memory allocation failed\n", FPGADEV_NAME);

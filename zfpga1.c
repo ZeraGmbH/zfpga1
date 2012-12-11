@@ -508,7 +508,7 @@ ssize_t FPGA_reg_read (struct file *file, char *buf, size_t count,loff_t *offset
 
 	devdata = file->private_data;
 
-	size = (count < 32) ? 32 : count;
+	size = (count < 64) ? 64 : count;
 	
 	dest = kmalloc(size,GFP_KERNEL);
 	
@@ -581,7 +581,7 @@ ssize_t FPGA_reg_write (struct file *file, const char *buf, size_t count,loff_t 
 
 	devdata = file->private_data;
 
-	size = (count < 32) ? 32 : count;
+	size = (count < 64) ? 64 : count;
 	
 	dp = kmalloc(size,GFP_KERNEL);
 	if (dp == NULL) {

@@ -501,6 +501,7 @@ ssize_t FPGA_reg_read (struct file *file, char *buf, size_t count,loff_t *offset
 #ifdef DEBUG
 		pr_info("%s: fpga reg read adress fault\n", FPGADEV_NAME);
 #endif /* DEBUG */
+		pr_info("%s: fpga reg read adress fault\n", FPGADEV_NAME);
 		return -EFAULT; /* bad adress */
 	}
 
@@ -511,6 +512,7 @@ ssize_t FPGA_reg_read (struct file *file, char *buf, size_t count,loff_t *offset
 #ifdef DEBUG
 		pr_info("%s : fpga reg read , kernel memory allocation failed\n", FPGADEV_NAME);
 #endif /* DEBUG */
+		pr_info("%s : fpga reg read , kernel memory allocation failed\n", FPGADEV_NAME);
 		return -ENOMEM;
 	}
 
@@ -519,6 +521,7 @@ ssize_t FPGA_reg_read (struct file *file, char *buf, size_t count,loff_t *offset
 #ifdef DEBUG
 		pr_info("%s : fpga reg read , start adress: 0x%lx\n", FPGADEV_NAME, adr);
 #endif /* DEBUG */	
+	pr_info("%s : fpga reg read , start adress: 0x%lx\n", FPGADEV_NAME, adr);
 	
 	while (len--)
 	{
@@ -532,6 +535,7 @@ ssize_t FPGA_reg_read (struct file *file, char *buf, size_t count,loff_t *offset
 #ifdef DEBUG
 		pr_info("%s : fpga reg read, copy_to_user failed\n", FPGADEV_NAME); 
 #endif /* DEBUG */
+		pr_info("%s : fpga reg read, copy_to_user failed\n", FPGADEV_NAME);
 		kfree(dest);
 		return -EFAULT;
 	}
@@ -541,7 +545,9 @@ ssize_t FPGA_reg_read (struct file *file, char *buf, size_t count,loff_t *offset
 #ifdef DEBUG
 	pr_info("%s : fpga reg read 0x%lx bytes read\n", FPGADEV_NAME, (unsigned long)(count)); 
 #endif /* DEBUG */
-
+	
+        pr_info("%s : fpga reg read 0x%lx bytes read\n", FPGADEV_NAME, (unsigned long)(count)); 
+	
 	return count; /* fpga reg data read sucessfully */
 }
 
@@ -621,12 +627,14 @@ int FPGA_reg_open (struct inode *inode, struct file *file)
 #ifdef DEBUG
 	pr_info("%s: fpga reg open entered\n", FPGADEV_NAME);
 #endif /* DEBUG */
-
+	pr_info("%s: fpga reg open entered\n", FPGADEV_NAME);
+	
 	minor = MINOR(inode->i_rdev);
 	if (minor != reg) {
 #ifdef DEBUG
 		pr_info("%s : trying to open unsupported device\n", FPGADEV_NAME);
 #endif /* DEBUG */
+		pr_info("%s : trying to open unsupported device\n", FPGADEV_NAME);
 		return -ENODEV;
 	}
 
@@ -636,6 +644,7 @@ int FPGA_reg_open (struct inode *inode, struct file *file)
 		pr_info("%s: fpga reg open failed (fpga not configured)\n", FPGADEV_NAME);
 #endif /* DEBUG */
 		return -ENODEV;
+		pr_info("%s: fpga reg open failed (fpga not configured)\n", FPGADEV_NAME);
 	}
 
 	devdata = zFPGA_device_data + minor;
@@ -649,6 +658,7 @@ int FPGA_reg_open (struct inode *inode, struct file *file)
 #ifdef DEBUG
 	pr_info("%s : device opened\n", FPGADEV_NAME);
 #endif /* DEBUG */
+	pr_info("%s : device opened\n", FPGADEV_NAME);
 	return 0;
 
 }
@@ -660,7 +670,8 @@ int FPGA_reg_release (struct inode *inode, struct file *file)
 #ifdef DEBUG
 	pr_info("%s: fpga reg release entered\n", FPGADEV_NAME);
 #endif /* DEBUG */
-
+	pr_info("%s: fpga reg release entered\n", FPGADEV_NAME);
+	
 	devdata = file->private_data;
 	devdata->usecount--;
 
@@ -669,7 +680,8 @@ int FPGA_reg_release (struct inode *inode, struct file *file)
 #ifdef DEBUG
 	pr_info("%s : device closed\n", FPGADEV_NAME);
 #endif /* DEBUG */
-
+	pr_info("%s : device closed\n", FPGADEV_NAME);
+	
 	return 0;
 }
 

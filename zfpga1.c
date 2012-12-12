@@ -649,8 +649,8 @@ int FPGA_reg_open (struct inode *inode, struct file *file)
 #ifdef DEBUG
 		pr_info("%s: fpga reg open failed (fpga not configured)\n", FPGADEV_NAME);
 #endif /* DEBUG */
-		return -ENODEV;
 		pr_info("%s: fpga reg open failed (fpga not configured)\n", FPGADEV_NAME);
+		return -ENODEV;
 	}
 
 	devdata = zFPGA_device_data + minor;

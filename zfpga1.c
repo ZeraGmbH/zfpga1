@@ -248,7 +248,7 @@ static irqreturn_t FPGA_irq_isr (int irq_nr,void *dev_id)
 #ifdef DEBUG
 	pr_info ("%s : received interrupt (fpga irq) ", FPGADEV_NAME);
 #endif
-
+	pr_info ("%s : received interrupt (fpga irq) ", FPGADEV_NAME);
 	/* put in the handling here later when implemented by hardware */
 
 
@@ -273,7 +273,8 @@ static irqreturn_t ADSP_irq_isr (int irq_nr,void *dev_id)
 #ifdef DEBUG
 	pr_info ("%s : received interrupt (dsp irq) ", FPGADEV_NAME);
 #endif
-
+	pr_info ("%s : received interrupt (dsp irq) ", FPGADEV_NAME);
+	
 	for (i = 0; i < 4 ; i++) {
 		devdata = zFPGA_device_data + (dsp1 + i);
 		adr = devdata->base_adr + DSPSTAT;
@@ -319,7 +320,7 @@ static irqreturn_t FPGA_done_isr ( int irq_nr, void *dev_id )
 #ifdef DEBUG
 	pr_info( "%s : received interrupt (fpga done) handled\n", FPGADEV_NAME);
 #endif
-
+	pr_info( "%s : received interrupt (fpga done) handled\n", FPGADEV_NAME);
 	return IRQ_HANDLED;
 }
 

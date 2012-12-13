@@ -504,7 +504,6 @@ ssize_t FPGA_reg_read (struct file *file, char *buf, size_t count,loff_t *offset
 #ifdef DEBUG
 		pr_info("%s: fpga reg read adress fault\n", FPGADEV_NAME);
 #endif /* DEBUG */
-		pr_info("%s: fpga reg read adress fault\n", FPGADEV_NAME);
 		return -EFAULT; /* bad adress */
 	}
 
@@ -516,7 +515,6 @@ ssize_t FPGA_reg_read (struct file *file, char *buf, size_t count,loff_t *offset
 #ifdef DEBUG
 		pr_info("%s : fpga reg read , kernel memory allocation failed\n", FPGADEV_NAME);
 #endif /* DEBUG */
-		pr_info("%s : fpga reg read , kernel memory allocation failed\n", FPGADEV_NAME);
 		return -ENOMEM;
 	}
 
@@ -526,12 +524,13 @@ ssize_t FPGA_reg_read (struct file *file, char *buf, size_t count,loff_t *offset
 #ifdef DEBUG
 		pr_info("%s : fpga reg read , start adress: 0x%lx\n", FPGADEV_NAME, adr);
 #endif /* DEBUG */	
-	pr_info("%s : fpga reg read , start adress: 0x%lx\n", FPGADEV_NAME, adr);
 	
 	for (i = 0; i < len; i++, start++, adr+=4)
 	{
 		data = ioread32(adr);
+#ifdef DEBUG
 		pr_info("%s : fpga reg read : 0x%lx\n", FPGADEV_NAME, data);
+#endif /* DEBUG */		
 		*start = data;
 	}	
 
@@ -539,7 +538,6 @@ ssize_t FPGA_reg_read (struct file *file, char *buf, size_t count,loff_t *offset
 #ifdef DEBUG
 		pr_info("%s : fpga reg read, copy_to_user failed\n", FPGADEV_NAME); 
 #endif /* DEBUG */
-		pr_info("%s : fpga reg read, copy_to_user failed\n", FPGADEV_NAME);
 		kfree(dest);
 		return -EFAULT;
 	}
@@ -549,8 +547,6 @@ ssize_t FPGA_reg_read (struct file *file, char *buf, size_t count,loff_t *offset
 #ifdef DEBUG
 	pr_info("%s : fpga reg read 0x%lx bytes read\n", FPGADEV_NAME, (unsigned long)(count)); 
 #endif /* DEBUG */
-	
-        pr_info("%s : fpga reg read 0x%lx bytes read\n", FPGADEV_NAME, (unsigned long)(count)); 
 	
 	return count; /* fpga reg data read sucessfully */
 }
@@ -562,7 +558,9 @@ ssize_t FPGA_reg_write (struct file *file, const char *buf, size_t count,loff_t 
 	unsigned long adr;
 	unsigned long data;
 	unsigned long *dp;
+	unsigned long *source;
 	unsigned long len;
+	int i;
 
 #ifdef DEBUG
 	pr_info("%s: fpga reg write entered\n", FPGADEV_NAME);
@@ -589,6 +587,8 @@ ssize_t FPGA_reg_write (struct file *file, const char *buf, size_t count,loff_t 
 		return -ENOMEM;
 	}
 
+	source = dp;
+	
 	/* copy user space data to kernel space */
 	if ( copy_from_user(dp,buf,count)) {
 #ifdef DEBUG
@@ -598,17 +598,16 @@ ssize_t FPGA_reg_write (struct file *file, const char *buf, size_t count,loff_t 
 		return -EFAULT;
 	}
 
+	dp = source;
 	adr = devdata->base_adr + *offset;
 	
-	while (len--)
+	for (i = 0; i < len; i++, source++, adr+=4)
 	{
-		data = *dp;
+		data = *source;
 #ifdef DEBUG
 		pr_info("%s : fpga reg write data 0x%lx to adr 0x%lx\n", FPGADEV_NAME, data, adr); 
 #endif /* DEBUG */
-
 		iowrite32(data, adr);
-		dp++;adr += 4;
 	}
 	
 	kfree(dp);

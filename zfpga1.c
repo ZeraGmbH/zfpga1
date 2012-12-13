@@ -488,6 +488,7 @@ ssize_t FPGA_reg_read (struct file *file, char *buf, size_t count,loff_t *offset
 	struct fpga_device_data *devdata;
 	unsigned long adr;
 	unsigned long *dest;
+	unsigned long *start;
 	unsigned long data;
 	unsigned long len;
 	int i;
@@ -520,17 +521,18 @@ ssize_t FPGA_reg_read (struct file *file, char *buf, size_t count,loff_t *offset
 	}
 
 	adr = devdata->base_adr + *offset;
+	start =dest;
 	
 #ifdef DEBUG
 		pr_info("%s : fpga reg read , start adress: 0x%lx\n", FPGADEV_NAME, adr);
 #endif /* DEBUG */	
 	pr_info("%s : fpga reg read , start adress: 0x%lx\n", FPGADEV_NAME, adr);
 	
-	for (i = 0; i < len; i++, dest++, adr+=4)
+	for (i = 0; i < len; i++, start++, adr+=4)
 	{
 		data = ioread32(adr);
 		pr_info("%s : fpga reg read : 0x%lx\n", FPGADEV_NAME, data);
-		*dest = data;
+		*start = data;
 	}	
 
 	if (copy_to_user(buf,(void*)dest,count)) {

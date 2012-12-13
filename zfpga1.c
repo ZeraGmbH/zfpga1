@@ -248,7 +248,6 @@ static irqreturn_t FPGA_irq_isr (int irq_nr,void *dev_id)
 #ifdef DEBUG
 	pr_info ("%s : received interrupt (fpga irq) ", FPGADEV_NAME);
 #endif
-	pr_info ("%s : received interrupt (fpga irq) ", FPGADEV_NAME);
 	/* put in the handling here later when implemented by hardware */
 
 
@@ -273,8 +272,7 @@ static irqreturn_t ADSP_irq_isr (int irq_nr,void *dev_id)
 #ifdef DEBUG
 	pr_info ("%s : received interrupt (dsp irq) ", FPGADEV_NAME);
 #endif
-	pr_info ("%s : received interrupt (dsp irq) ", FPGADEV_NAME);
-	
+
 	for (i = 0; i < 4 ; i++) {
 		devdata = zFPGA_device_data + (dsp1 + i);
 		adr = devdata->base_adr + DSPSTAT;
@@ -320,7 +318,6 @@ static irqreturn_t FPGA_done_isr ( int irq_nr, void *dev_id )
 #ifdef DEBUG
 	pr_info( "%s : received interrupt (fpga done) handled\n", FPGADEV_NAME);
 #endif
-	pr_info( "%s : received interrupt (fpga done) handled\n", FPGADEV_NAME);
 	return IRQ_HANDLED;
 }
 
@@ -630,14 +627,12 @@ int FPGA_reg_open (struct inode *inode, struct file *file)
 #ifdef DEBUG
 	pr_info("%s: fpga reg open entered\n", FPGADEV_NAME);
 #endif /* DEBUG */
-	pr_info("%s: fpga reg open entered\n", FPGADEV_NAME);
 	
 	minor = MINOR(inode->i_rdev);
 	if (minor != reg) {
 #ifdef DEBUG
 		pr_info("%s : trying to open unsupported device\n", FPGADEV_NAME);
 #endif /* DEBUG */
-		pr_info("%s : trying to open unsupported device\n", FPGADEV_NAME);
 		return -ENODEV;
 	}
 
@@ -646,7 +641,6 @@ int FPGA_reg_open (struct inode *inode, struct file *file)
 #ifdef DEBUG
 		pr_info("%s: fpga reg open failed (fpga not configured)\n", FPGADEV_NAME);
 #endif /* DEBUG */
-		pr_info("%s: fpga reg open failed (fpga not configured)\n", FPGADEV_NAME);
 		return -ENODEV;
 	}
 
@@ -661,7 +655,6 @@ int FPGA_reg_open (struct inode *inode, struct file *file)
 #ifdef DEBUG
 	pr_info("%s : device opened\n", FPGADEV_NAME);
 #endif /* DEBUG */
-	pr_info("%s : device opened\n", FPGADEV_NAME);
 	return 0;
 
 }
@@ -673,7 +666,6 @@ int FPGA_reg_release (struct inode *inode, struct file *file)
 #ifdef DEBUG
 	pr_info("%s: fpga reg release entered\n", FPGADEV_NAME);
 #endif /* DEBUG */
-	pr_info("%s: fpga reg release entered\n", FPGADEV_NAME);
 	
 	devdata = file->private_data;
 	devdata->usecount--;
@@ -683,7 +675,6 @@ int FPGA_reg_release (struct inode *inode, struct file *file)
 #ifdef DEBUG
 	pr_info("%s : device closed\n", FPGADEV_NAME);
 #endif /* DEBUG */
-	pr_info("%s : device closed\n", FPGADEV_NAME);
 	
 	return 0;
 }

@@ -119,6 +119,7 @@ struct fpga_device_data {
 	char devname[10];
 	unsigned long base_adr; /* base adress for device */
 	int devnr;
+	unsigned long id; 
 	int usecount; /* for permission handling */
 	struct fasync_struct *async_queue; /* for used interrupt */
 };
@@ -144,8 +145,13 @@ struct devNode_data {
 /* dsp internal data memory space */
 #define DSPMemBase 0x80000 
 #define DSPMemLength 0x7FFF
-#define DSPDataMemBase 0x82800
-#define DSPDataMemTop 0x87FFF
+#define DSPDataMemBase21262 0x82800
+#define DSPDataMemTop21262 0x87FFF
+
+#define DSPDataMemBase21362_1 0xE0800
+#define DSPDataMemTop21362_1 0xE3FFF
+#define DSPDataMemBase21362_2 0x98180
+#define DSPDataMemTop21362_2 0x9FFFF
 
 
 /* fpga register memory space */

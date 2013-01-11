@@ -96,36 +96,42 @@ static struct fpga_device_data zFPGA_device_data[] = {
 	[boot] = {
 		.devname	= "boot",
 		.devnr		= 0,
+		.id			= 0,
 		.usecount	= 0,
 		.async_queue	= NULL,
 	},
 	[reg] = {
 		.devname	= "reg",
 		.devnr		= 1,
+		.id			= 0,
 		.usecount	= 0,
 		.async_queue	= NULL,
 	},
 	[dsp1] = {
 		.devname	= "dsp1",
 		.devnr		= 2,
+		.id			= 0,
 		.usecount	= 0,
 		.async_queue	= NULL,
 	},
 	[dsp2] = {
 		.devname	= "dsp2",
 		.devnr		= 3,
+		.id			= 0,
 		.usecount	= 0,
 		.async_queue	= NULL,
 	},
 	[dsp3] = {
 		.devname	= "dsp3",
 		.devnr		= 4,
+		.id			= 0,
 		.usecount	= 0,
 		.async_queue	= NULL,
 	},
 	[dsp4] = {
 		.devname	= "dsp4",
 		.devnr		= 5,
+		.id			= 0,
 		.usecount	= 0,
 		.async_queue	= NULL,
 	},
@@ -938,6 +944,24 @@ static loff_t adspdev_lseek (struct file *file, loff_t offset, int origin)
 }
 
 
+
+int test_adrspace(unsigned long id, unsigned long len, size_t count, loff_t *offset)
+{
+	if ( id == adsp_21262_1_magic)
+	{
+		if ( (*offset < DSPDataMemBase21262) ||  ((*offset + len) > DSPDataMemTop21262) || (count & 3))
+			return -1;
+	}
+	else
+	{
+		if ( (((*offset < DSPDataMemBase21362_1) ||  ((*offset + len) > DSPDataMemTop21362_1)) &&
+		       ((*offset < DSPDataMemBase21362_2) ||  ((*offset + len) > DSPDataMemTop21362_2))) || (count & 3))
+			return -1;
+	}
+	return 0;
+}
+
+
 ssize_t adspdev_read (struct file *file, char *buf, size_t count,loff_t *offset)
 {
 	struct fpga_device_data *devdata;
@@ -953,9 +977,10 @@ ssize_t adspdev_read (struct file *file, char *buf, size_t count,loff_t *offset)
 	pr_info("%s : dsp read entered startadr: 0x%lx, length: 0x%lx\n",FPGADEV_NAME,(unsigned long)(*offset),(unsigned long) count);
 #endif /* DEBUG */
 	
+	devdata = file->private_data;
 	len = count >> 2;
 	
-	if ( (*offset < DSPDataMemBase) ||  ((*offset + len) > DSPDataMemTop) || (count & 3)) {
+	if ( test_adrspace(devdata->id, len, count, offset) <  0) {
 #ifdef DEBUG
 		pr_info("%s: dsp read adress fault\n", FPGADEV_NAME);
 #endif /* DEBUG */
@@ -969,8 +994,6 @@ ssize_t adspdev_read (struct file *file, char *buf, size_t count,loff_t *offset)
 #endif /* DEBUG */
 		return -ENOMEM;
 	}
-
-	devdata = file->private_data;
 
 	adr = devdata->base_adr;
 	dest = (unsigned long*) tmp;
@@ -1027,9 +1050,10 @@ ssize_t adspdev_write (struct file *file, const char *buf, size_t count,loff_t *
 	pr_info("%s : dsp write entered startadr: 0x%lx, length: 0x%lx\n",FPGADEV_NAME,(unsigned long)(*offset),(unsigned long) count);
 #endif /* DEBUG */
 	
+	devdata = file->private_data;
 	len = count >> 2;
 	
-	if ( (*offset < DSPDataMemBase) ||  ((*offset + len) > DSPDataMemTop) || (count & 3)) {
+	if ( test_adrspace(devdata->id, len, count, offset) <  0)  {
 #ifdef DEBUG
 		pr_info("%s: dsp write adress fault\n", FPGADEV_NAME);
 #endif /* DEBUG */
@@ -1052,8 +1076,6 @@ ssize_t adspdev_write (struct file *file, const char *buf, size_t count,loff_t *
 		kfree(tmp); 
 		return -EFAULT;
 	}
-
-	devdata = file->private_data;
 
 	adr = devdata->base_adr;
 	source = (unsigned long*) tmp;
@@ -1140,7 +1162,7 @@ int adspdev_open (struct inode *inode, struct file *file)
 	devdata = zFPGA_device_data + minor;
 	addr = devdata->base_adr + MAGICID;
 	id = ioread32(addr);
-
+		
 	if ( (id != adsp_21262_1_magic)  && (id != adsp_21362_1_magic) ) {
 #ifdef DEBUG
 		pr_info("%s : dsp%d not available, id read 0x%lx from adress 0x%lx\n", FPGADEV_NAME, devdata->devnr - dsp1 + 1, id, addr);
@@ -1148,6 +1170,8 @@ int adspdev_open (struct inode *inode, struct file *file)
 		return -ENODEV;
 	}
 		
+	devdata->id = id; // we keep the id read
+	
 	if (devdata->usecount) // only once usable
 		return -EBUSY;
 	else devdata->usecount++;

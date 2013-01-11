@@ -220,7 +220,7 @@ typedef struct bootheader {
 
 
 #define adsp_21262_1_magic 0xAA55BB44
-
+#define adsp_21362_1_magic 0xAA55CC33
 
 #endif /* FPGA_DRIVER_H */
 

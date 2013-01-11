@@ -1141,7 +1141,7 @@ int adspdev_open (struct inode *inode, struct file *file)
 	addr = devdata->base_adr + MAGICID;
 	id = ioread32(addr);
 
-	if (id != adsp_21262_1_magic) {
+	if ( (id != adsp_21262_1_magic)  && (id != adsp_21362_1_magic) ) {
 #ifdef DEBUG
 		pr_info("%s : dsp%d not available, id read 0x%lx from adress 0x%lx\n", FPGADEV_NAME, devdata->devnr - dsp1 + 1, id, addr);
 #endif /* DEBUG */

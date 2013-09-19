@@ -159,7 +159,7 @@ static struct gpmc_timings FPGA_GPMC_Timing = {
 	/* Chip-select signal timings corresponding to GPMC_CS_CONFIG2 */
 	cs_on:0,		/* Assertion time */
 	cs_rd_off:50,		/* Read deassertion time */
-	cs_wr_off:50,		/* Write deassertion time */
+	cs_wr_off:55,		/* Write deassertion time */
 
 	/* ADV signal timings corresponding to GPMC_CONFIG3 */
 	adv_on:0,		/* Assertion time */

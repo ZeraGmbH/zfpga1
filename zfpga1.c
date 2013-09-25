@@ -1003,7 +1003,7 @@ ssize_t adspdev_read (struct file *file, char *buf, size_t count,loff_t *offset)
 	iowrite32((unsigned long)*offset,adr + SPI);
 	iowrite32(len, adr + SPI);
 
-	udelay(100); /* give the dsp 100 uS for initialzing serial and dma */
+	/*udelay(100);*/  /* give the dsp 100 uS for initialzing serial and dma */
 
 #ifdef DEBUG
 	for (i = 0;i < len;i++,dest++) {
@@ -1085,7 +1085,7 @@ ssize_t adspdev_write (struct file *file, const char *buf, size_t count,loff_t *
 	iowrite32((unsigned long)*offset, adr + SPI);
 	iowrite32(len, adr + SPI);
 
-	udelay(100); /* give the dsp 100 uS for initialzing serial and dma */
+	/*udelay(100);*/ /* give the dsp 100 uS for initialzing serial and dma */
 
 	/* write the data now */
 #ifdef DEBUG

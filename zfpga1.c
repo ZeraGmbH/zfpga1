@@ -31,13 +31,25 @@ static const struct of_device_id zfpga_of_match[] = {
 MODULE_DEVICE_TABLE(of, zfpga_of_match);
 
 
+struct zfpga_drv_data {
+	void __iomem *base;
+};
+
+
 static int zfpga_probe(struct platform_device *pdev)
 {
 	const struct of_device_id *match;
+	struct zfpga_drv_data *zfpga;
 
 	match = of_match_device(zfpga_of_match, &pdev->dev);
 	if (!match)
 		return -EINVAL;
+
+	/* alloc driver data and set to device */
+	zfpga = devm_kzalloc(&pdev->dev, sizeof(*zfpga), GFP_KERNEL);
+	if (!zfpga)
+		return -ENOMEM;
+	platform_set_drvdata(pdev, zfpga);
 
 #ifdef DEBUG
 	pr_info( "zfpga_probe called\n");
@@ -51,6 +63,9 @@ static int zfpga_remove(struct platform_device *pdev)
 #ifdef DEBUG
 	pr_info( "zfpga_remove called\n");
 #endif // DEBUG
+
+	platform_set_drvdata(pdev, NULL);
+
 	return 0;
 }
 

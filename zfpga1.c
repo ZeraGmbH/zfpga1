@@ -18,6 +18,7 @@
 #include <linux/of.h>
 #include <linux/of_gpio.h>
 #include <linux/of_device.h>
+#include <linux/of_address.h>
 
 #include "zfpga1.h"
 
@@ -40,28 +41,53 @@ static int zfpga_probe(struct platform_device *pdev)
 {
 	const struct of_device_id *match;
 	struct zfpga_drv_data *zfpga;
+	struct resource res;
+	int ret = 0;
 
 	match = of_match_device(zfpga_of_match, &pdev->dev);
-	if (!match)
-		return -EINVAL;
+	if (!match) {
+		ret = -EINVAL;
+		goto exit;
+	}
 
 	/* alloc driver data and set to device */
 	zfpga = devm_kzalloc(&pdev->dev, sizeof(*zfpga), GFP_KERNEL);
-	if (!zfpga)
-		return -ENOMEM;
+	if (!zfpga) {
+		dev_err(&pdev->dev, "can't alloc device data\n");
+		ret = -ENOMEM;
+		goto exit;
+	}
 	platform_set_drvdata(pdev, zfpga);
 
+	/* setup memory region set in devicetree */
+	ret = of_address_to_resource(pdev->dev.of_node, 0, &res);
+	if (ret) {
+		dev_err(&pdev->dev, "can't get memory limits - 'reg' properly set in of?\n");
+		goto exit_pdrvdata;
+	}
+	zfpga->base = devm_ioremap_resource(&pdev->dev, &res);
+	if (IS_ERR(zfpga->base)) {
+		ret = PTR_ERR(zfpga->base);
+		goto exit_pdrvdata;
+	}
+
 #ifdef DEBUG
-	pr_info( "zfpga_probe called\n");
+	dev_info(&pdev->dev, "zfpga_probe called\n");
 #endif // DEBUG
 	return 0;
+
+exit_pdrvdata:
+	platform_set_drvdata(pdev, NULL);
+
+exit:
+	return ret;
 }
 
 
 static int zfpga_remove(struct platform_device *pdev)
 {
 #ifdef DEBUG
-	pr_info( "zfpga_remove called\n");
+	dev_info(&pdev->dev, "zfpga_remove called\n");
 #endif // DEBUG
 
 	platform_set_drvdata(pdev, NULL);

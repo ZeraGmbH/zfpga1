@@ -32,18 +32,34 @@ static const struct of_device_id zfpga_of_match[] = {
 MODULE_DEVICE_TABLE(of, zfpga_of_match);
 
 
-struct zfpga_drv_data {
+#define MAX_NODE_COUNT 8
+#define MAX_NODE_TYPES 2
+
+struct zfpga_node_data {
+	const char *nodename;
+	u32 nodetype;
 	void __iomem *base;
 };
 
+struct zfpga_dev_data {
+	struct zfpga_node_data sub_device[MAX_NODE_COUNT];
+	unsigned int count_nodes;
+};
 
 static int zfpga_probe(struct platform_device *pdev)
 {
 	const struct of_device_id *match;
-	struct zfpga_drv_data *zfpga;
+	struct zfpga_dev_data *zfpga;
 	struct resource res;
-	int ret = 0;
+	struct device_node *child_node;
+	int ret;
+	u32 nodetype;
 
+#ifdef DEBUG
+	dev_info(&pdev->dev, "zfpga_probe called\n");
+#endif // DEBUG
+
+	ret = 0;
 	match = of_match_device(zfpga_of_match, &pdev->dev);
 	if (!match) {
 		ret = -EINVAL;
@@ -59,26 +75,68 @@ static int zfpga_probe(struct platform_device *pdev)
 	}
 	platform_set_drvdata(pdev, zfpga);
 
-	/* setup memory region set in devicetree */
-	ret = of_address_to_resource(pdev->dev.of_node, 0, &res);
-	if (ret) {
-		dev_err(&pdev->dev, "can't get memory limits - 'reg' properly set in of?\n");
-		goto exit_pdrvdata;
-	}
-	zfpga->base = devm_ioremap_resource(&pdev->dev, &res);
-	if (IS_ERR(zfpga->base)) {
-		ret = PTR_ERR(zfpga->base);
-		goto exit_pdrvdata;
-	}
-
+	/* apply device node's information (dsp/boot/reg) */
+	child_node = NULL;
+	while ((child_node = of_get_next_child(pdev->dev.of_node, child_node)) != NULL) {
+		/* avoid buffer overflow */
+		if (zfpga->count_nodes > MAX_NODE_COUNT) {
+			dev_err(&pdev->dev, "maximum node count %u reached in %s!\n",
+				MAX_NODE_COUNT,
+				pdev->dev.of_node->full_name);
+			goto exit_cleanup_drvdata;
+		}
+		/* node's name */
+		if((ret = of_property_read_string(
+				child_node,
+				"nodename",
+				&zfpga->sub_device[zfpga->count_nodes].nodename))) {
+			dev_err(&pdev->dev, "missing/incorrect entry 'nodename' for %s!\n",
+				child_node->full_name);
+			goto exit_cleanup_drvdata;
+		}
 #ifdef DEBUG
-	dev_info(&pdev->dev, "zfpga_probe called\n");
+		dev_info(&pdev->dev, "entry 'nodename = %s' found in %s\n",
+				zfpga->sub_device[zfpga->count_nodes].nodename,
+		child_node->full_name);
 #endif // DEBUG
+		/* node's type */
+		if((ret = of_property_read_u32(child_node, "nodetype", &nodetype))) {
+			dev_err(&pdev->dev, "missing/incorrect entry 'nodetype' in %s!\n",
+				child_node->full_name);
+			goto exit_cleanup_drvdata;
+		}
+		if(nodetype > MAX_NODE_TYPES) {
+			dev_err(&pdev->dev, "entry 'nodetype' out of limits in %s!\n",
+				child_node->full_name);
+			goto exit_cleanup_drvdata;
+		}
+		zfpga->sub_device[zfpga->count_nodes].nodetype = nodetype;
+#ifdef DEBUG
+		dev_info(&pdev->dev, "entry 'nodetype = %u' found in %s\n",
+				nodetype,
+		child_node->full_name);
+#endif // DEBUG
+		/* setup node's memory region */
+		ret = of_address_to_resource(pdev->dev.of_node, zfpga->count_nodes, &res);
+		if (ret) {
+			dev_err(&pdev->dev, "can't get memory limits - 'reg' properly set in %s?\n",
+				child_node->full_name);
+			goto exit_cleanup_drvdata;
+		}
+		zfpga->sub_device[zfpga->count_nodes].base = devm_ioremap_resource(&pdev->dev, &res);
+		if (IS_ERR(zfpga->sub_device[zfpga->count_nodes].base)) {
+			dev_err(&pdev->dev, "can't remap in %s\n",
+				child_node->full_name);
+			ret = PTR_ERR(zfpga->sub_device[zfpga->count_nodes].base);
+			goto exit_cleanup_drvdata;
+		}
+		/* next node */
+		zfpga->count_nodes++;
+	}
 	return 0;
 
-exit_pdrvdata:
+exit_cleanup_drvdata:
 	platform_set_drvdata(pdev, NULL);
-
 exit:
 	return ret;
 }

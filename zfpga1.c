@@ -153,6 +153,7 @@ static int zfpga_remove(struct platform_device *pdev)
 	return 0;
 }
 
+static struct class *zfpga_class;
 
 static struct platform_driver zfpga_platform_driver = {
 	.probe 		= zfpga_probe,
@@ -163,11 +164,43 @@ static struct platform_driver zfpga_platform_driver = {
 		.of_match_table = zfpga_of_match,
 	},
 };
-module_platform_driver(zfpga_platform_driver);
 
+static int __init zfpga_init(void)
+{
+	int res;
+
+	zfpga_class = class_create(THIS_MODULE, ZERACLASS_NAME);
+	if (IS_ERR(zfpga_class)) {
+		pr_err("zfpga: unable to create class!\n");
+		res = PTR_ERR(zfpga_class);
+		goto exit;
+	}
+#ifdef DEBUG
+	pr_info( "zfpga: class created\n");
+#endif
+	res = platform_driver_register(&zfpga_platform_driver);
+	if (res) {
+		pr_err( "zfpga: unable to register platform driver!\n");
+		goto exit;
+	}
+#ifdef DEBUG
+	pr_info( "zfpga: platform driver registered\n");
+#endif
+exit:
+	return res;
+}
+
+static void __exit zfpga_exit(void)
+{
+	class_destroy(zfpga_class);
+	platform_driver_unregister(&zfpga_platform_driver);
+}
 
 MODULE_DESCRIPTION("ZERA FPGA Type 1 kernel module");
 MODULE_AUTHOR("Peter Lohmer (p.lohmer@zera.de)");
 MODULE_AUTHOR("Andreas Mueller (a.mueller@zera.de)");
 MODULE_LICENSE("GPL");
 MODULE_SUPPORTED_DEVICE("ZERA zFPGA1");
+
+module_init(zfpga_init);
+module_exit(zfpga_exit);

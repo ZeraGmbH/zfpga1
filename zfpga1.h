@@ -68,6 +68,19 @@
 #define FPGADEV_NAME "zFPGA1" 
 /* the device class name for creating device file names */
 #define ZERACLASS_NAME "zeraIO" 
+/* using 'a' as the magic number to build the ioctl commands */
+#define FPGA_IOC_MAGIC 'a'
+
+
+/* ioctl commands */
+#define FPGA_RESET _IOR(FPGA_IOC_MAGIC,1,char*)
+
+#define ADSP_RESET _IOR(FPGA_IOC_MAGIC,1,char*)
+#define ADSP_BOOT _IOR(FPGA_IOC_MAGIC,2,char*)
+#define ADSP_INT_REQ _IOR(FPGA_IOC_MAGIC,3,char*)
+#define ADSP_INT_ENABLE _IOR(FPGA_IOC_MAGIC,4,char*)
+#define ADSP_INT_DISABLE _IOR(FPGA_IOC_MAGIC,5,char*)
+#define IO_READ _IOR(FPGA_IOC_MAGIC,6,char*)
 
 
 #endif /* FPGA_DRIVER_H */

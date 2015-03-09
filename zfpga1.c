@@ -44,6 +44,12 @@ enum en_node_types {
 	NODE_TYPE_COUNT
 };
 
+/* Assumption: We have one fpga hardware in our system. */
+static unsigned long global_flags = 0;
+
+#define FLAG_GLOBAL_FPGA_BOOT_DEVICE_FOUND 0  /* used to ensure assumption above */
+#define FLAG_GLOBAL_FPGA_CONFIGURED 1         /* booted ? */
+
 struct zfpga_node_data {
 	const char *nodename;
 	u8 nodetype;
@@ -54,13 +60,12 @@ struct zfpga_node_data {
 	struct platform_device *pdev;
 	struct fasync_struct *async_queue; /* for used interrupt */
 
-	/* type specifics - not all devices make use of the following */
-	/* TODO these have to be made thread/interrupt safe !!!!!!!! */
-	u16 bootcount;
-	u16 flags;
-	int configured;		/* !! not part of flags because set in irq !! */
+	/* per device status flags */
+	unsigned long flags;
 };
 
+
+/* per device flags */
 #define FLAG_OPEN       (1<<0)	/* avoid file opened  more than once */
 #define FLAG_RUNNING    (1<<1)
 
@@ -78,12 +83,12 @@ static int common_fop_open(struct inode *inode, struct file *file)
 #ifdef DEBUG
 	dev_info(&node_data->pdev->dev, "common_fop_open for %s entered\n", node_data->nodename);
 #endif
-	if (node_data->flags & FLAG_OPEN) {
+	if (test_bit(FLAG_OPEN, &node_data->flags)) {
 		dev_info(&node_data->pdev->dev, "%s already opened!\n", node_data->nodename);
 		return -EBUSY;
 	}
 	else {
-		node_data->flags |= FLAG_OPEN;
+		set_bit(FLAG_OPEN, &node_data->flags);
 	}
 	file->private_data = node_data;
 #ifdef DEBUG
@@ -98,7 +103,7 @@ static int common_fop_release(struct inode *inode, struct file *file)
 #ifdef DEBUG
 	dev_info(&node_data->pdev->dev, "common_fop_release for %s entered\n", node_data->nodename);
 #endif
-	node_data->flags &= ~FLAG_OPEN;
+	clear_bit(FLAG_OPEN, &node_data->flags);
 	file->private_data = NULL;
 #ifdef DEBUG
 	dev_info(&node_data->pdev->dev, "device %s closed\n", node_data->nodename);
@@ -131,14 +136,14 @@ static int common_fop_fasync (int fd, struct file *file, int mode)
 /* ---------------------- boot device fops ---------------------- */
 static ssize_t boot_fop_write (struct file *file, const char *buf, size_t count,loff_t *offset)
 {
+	char* tmp;
+	unsigned long len;
 	struct zfpga_node_data *node_data = file->private_data;
+
 #ifdef DEBUG
 	dev_info(&node_data->pdev->dev, "fpga boot write entered for %s\n", node_data->nodename);
 #endif
-/*	char* tmp;
-	unsigned long adr;
-	unsigned long len;
-	if (zFPGA_device_stat.configured) {
+	if (test_bit(FLAG_GLOBAL_FPGA_CONFIGURED, &global_flags)) {
 		dev_info(
 			&node_data->pdev->dev,
 			"fboot_fop_write failed (fpga already configured) for %s\n",
@@ -153,8 +158,6 @@ static ssize_t boot_fop_write (struct file *file, const char *buf, size_t count,
 			node_data->nodename);
 		return -ENOMEM;
 	}
-
-	// copy user space data to kernel space
 	if ( copy_from_user(tmp,buf,count)) {
 		dev_info(
 			&node_data->pdev->dev,
@@ -163,17 +166,10 @@ static ssize_t boot_fop_write (struct file *file, const char *buf, size_t count,
 		kfree(tmp);
 		return -EFAULT;
 	}
-
-	adr = node_data->base_adr;
 	len = count;
-
 	while (len--)
-		writeb(*(buf++), adr);
-
-	zFPGA_device_stat.fpgabootcount += count;
-
+		writeb(*(buf++), node_data->base);
 	kfree(tmp);
-*/
 #ifdef DEBUG
 	dev_info(
 		&node_data->pdev->dev,
@@ -181,6 +177,19 @@ static ssize_t boot_fop_write (struct file *file, const char *buf, size_t count,
 		(unsigned long)(count), node_data->nodename);
 #endif
 	return count; /* fpga boot data written sucessfully */
+}
+
+int fpga_reset(struct zfpga_node_data *node_data)
+{
+#ifdef DEBUG
+	dev_info(&node_data->pdev->dev, "fpga_reset entered\n");
+#endif
+	/*gpio_set_value(zFPGA_platform_data.gpio_reset, 1);
+	udelay(10);
+	gpio_set_value(zFPGA_platform_data.gpio_reset, 0);*/
+	/* resetting causes unconfogured state */
+	clear_bit(FLAG_GLOBAL_FPGA_CONFIGURED, &global_flags);
+	return 0;
 }
 
 static long boot_fop_ioctl (struct file *file,unsigned int cmd, unsigned long arg)
@@ -193,7 +202,7 @@ static long boot_fop_ioctl (struct file *file,unsigned int cmd, unsigned long ar
 		node_data->nodename, cmd, arg);
 #endif
 	switch ( cmd ) {
-		/*case FPGA_RESET: return(reset_FPGA());*/
+		case FPGA_RESET: return(fpga_reset(node_data));
 		default:
 			dev_info(
 				&node_data->pdev->dev,
@@ -651,6 +660,23 @@ static int parse_of(struct platform_device *pdev, struct zfpga_dev_data *zfpga)
 				child_node->full_name);
 			goto exit;
 		}
+		/* There must be only one boot device */
+		if(nodetype == NODE_TYPE_BOOT)
+		{
+			if (test_bit(FLAG_GLOBAL_FPGA_BOOT_DEVICE_FOUND, &global_flags)) {
+				dev_info(&pdev->dev, "%s tries to set up a second boot device!\n",
+					child_node->full_name);
+				goto exit;
+			}
+			else {
+				ret = fpga_reset(&zfpga->nodes[zfpga->count_nodes]);
+				if (ret) {
+					pr_info( "zfpga: unable to reset FPGA!\n");
+					goto exit;
+				}
+				set_bit(FLAG_GLOBAL_FPGA_BOOT_DEVICE_FOUND, &global_flags);
+			}
+		}
 		zfpga->nodes[zfpga->count_nodes].nodetype = nodetype;
 #ifdef DEBUG
 		dev_info(&pdev->dev, "entry 'nodetype = %u' found in %s\n",
@@ -778,7 +804,7 @@ static int __init zfpga_init(void)
 #endif
 	res = platform_driver_register(&zfpga_platform_driver);
 	if (res) {
-		pr_err( "zfpga: unable to register platform driver!\n");
+		pr_info( "zfpga: unable to register platform driver!\n");
 		goto exit;
 	}
 #ifdef DEBUG

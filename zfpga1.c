@@ -54,7 +54,7 @@ struct zfpga_node_data {
 	const char *nodename;
 	u8 nodetype;
 	void __iomem *base;
-	/* TODO iomem size */
+	resource_size_t size;
 	struct cdev cdev;
 	struct device *device; /* keep it just in case we want to add entries to sysfs later */
 	struct platform_device *pdev;
@@ -697,10 +697,12 @@ static int parse_of(struct platform_device *pdev, struct zfpga_dev_data *zfpga)
 			ret = PTR_ERR(zfpga->nodes[zfpga->count_nodes].base);
 			goto exit;
 		}
+		zfpga->nodes[zfpga->count_nodes].size = resource_size(&res);
 #ifdef DEBUG
-		dev_info(&pdev->dev, "memory region remapped for %s to %p\n",
+		dev_info(&pdev->dev, "memory region remapped for %s to %p size 0x%08X\n",
 				zfpga->nodes[zfpga->count_nodes].nodename,
-				zfpga->nodes[zfpga->count_nodes].base);
+				zfpga->nodes[zfpga->count_nodes].base,
+				zfpga->nodes[zfpga->count_nodes].size);
 #endif
 		/* next node */
 		zfpga->count_nodes++;

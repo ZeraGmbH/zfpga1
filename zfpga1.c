@@ -655,14 +655,19 @@ static int parse_of(struct platform_device *pdev, struct zfpga_dev_data *zfpga)
 				child_node->full_name);
 			goto exit;
 		}
+#ifdef DEBUG
+		dev_info(&pdev->dev, "entry 'nodetype = %u' found in %s\n",
+				nodetype,
+				child_node->full_name);
+#endif
 		if(nodetype >= NODE_TYPE_COUNT) {
 			dev_info(&pdev->dev, "entry 'nodetype' out of limits in %s!\n",
 				child_node->full_name);
 			goto exit;
 		}
-		/* There must be only one boot device */
 		if(nodetype == NODE_TYPE_BOOT)
 		{
+			/* There must be only one boot device in the system */
 			if (test_bit(FLAG_GLOBAL_FPGA_BOOT_DEVICE_FOUND, &global_flags)) {
 				dev_info(&pdev->dev, "%s tries to set up a second boot device!\n",
 					child_node->full_name);
@@ -678,11 +683,6 @@ static int parse_of(struct platform_device *pdev, struct zfpga_dev_data *zfpga)
 			}
 		}
 		zfpga->nodes[zfpga->count_nodes].nodetype = nodetype;
-#ifdef DEBUG
-		dev_info(&pdev->dev, "entry 'nodetype = %u' found in %s\n",
-				nodetype,
-				child_node->full_name);
-#endif
 		/* setup node's memory region */
 		ret = of_address_to_resource(pdev->dev.of_node, zfpga->count_nodes, &res);
 		if (ret) {

@@ -622,7 +622,7 @@ exit:
 static int parse_of(struct platform_device *pdev, struct zfpga_dev_data *zfpga)
 {
 	struct resource res;
-	u8 nodetype;
+	u32 nodetype;
 	int ret = 0;
 	struct device_node *child_node = NULL;
 
@@ -650,7 +650,7 @@ static int parse_of(struct platform_device *pdev, struct zfpga_dev_data *zfpga)
 				child_node->full_name);
 #endif
 		/* node's type */
-		if((ret = of_property_read_u8(child_node, "nodetype", &nodetype))) {
+		if((ret = of_property_read_u32(child_node, "nodetype", &nodetype))) {
 			dev_info(&pdev->dev, "missing/incorrect entry 'nodetype' in %s!\n",
 				child_node->full_name);
 			goto exit;
@@ -671,6 +671,7 @@ static int parse_of(struct platform_device *pdev, struct zfpga_dev_data *zfpga)
 			if (test_bit(FLAG_GLOBAL_FPGA_BOOT_DEVICE_FOUND, &global_flags)) {
 				dev_info(&pdev->dev, "%s tries to set up a second boot device!\n",
 					child_node->full_name);
+				ret = -EINVAL;
 				goto exit;
 			}
 			else {
@@ -682,7 +683,7 @@ static int parse_of(struct platform_device *pdev, struct zfpga_dev_data *zfpga)
 				set_bit(FLAG_GLOBAL_FPGA_BOOT_DEVICE_FOUND, &global_flags);
 			}
 		}
-		zfpga->nodes[zfpga->count_nodes].nodetype = nodetype;
+		zfpga->nodes[zfpga->count_nodes].nodetype = (u8)nodetype;
 		/* setup node's memory region */
 		ret = of_address_to_resource(pdev->dev.of_node, zfpga->count_nodes, &res);
 		if (ret) {

@@ -36,7 +36,7 @@ MODULE_DEVICE_TABLE(of, zfpga_of_match);
 #define MAX_DSP_COUNT 4
 #define MAX_NODE_COUNT 2+MAX_DSP_COUNT /* boot+reg+n*dsp */
 
-enum en_node_types {
+enum node_types {
 	NODE_TYPE_BOOT = 0,
 	NODE_TYPE_REG,
 	NODE_TYPE_DSP,
@@ -47,7 +47,7 @@ enum en_node_types {
 /* Flags singleton:
    * Assumption: We have one fpga hardware in our system.
    * data type is arch specific for atomic bit access */
-static unsigned long global_flags = 0;
+static volatile unsigned long global_flags = 0;
 
 #define FLAG_GLOBAL_FPGA_BOOT_DEVICE_FOUND 0  /* used to ensure assumption above */
 #define FLAG_GLOBAL_FPGA_CONFIGURED 1         /* booted ? */
@@ -63,14 +63,14 @@ struct zfpga_node_data {
 	struct fasync_struct *async_queue; /* for used interrupt */
 
 	/* per device flags - data type is arch specific for atomic bit access */
-	unsigned long flags;
+	volatile unsigned long flags;
 	/* dsp type identification */
 	u32 dsp_magic_id;
 };
 
 /* per device flags */
-#define FLAG_OPEN       (1<<0)	/* avoid file opened  more than once */
-#define FLAG_RUNNING    (1<<1)
+#define FLAG_OPEN        (1<<0)	/* avoid file opened  more than once */
+#define FLAG_DSP_RUNNING (1<<1)	/* keep track of dsp running state */
 
 struct zfpga_dev_data {
 	struct zfpga_node_data nodes[MAX_NODE_COUNT];
@@ -78,48 +78,62 @@ struct zfpga_dev_data {
 	dev_t first_char_node;
 };
 
-/* ---------------------- internal constants  ---------------------- */
-/* dsp 'magic' identifiation ids */
-#define adsp_21262_1_magic 0xAA55BB44
-#define adsp_21362_1_magic 0xAA55CC33
+/* ---------------------- internal constants/structs  ---------------------- */
+/* fpga addresses for dsp access */
+#define FPGA_ADDR_DSP_SPI 0
+#define FPGA_ADDR_DSP_SERIAL 4
+#define FPGA_ADDR_DSP_CTRL 8
+#define FPGA_ADDR_DSP_STAT 12
+#define FPGA_ADDR_DSP_CFG 16
+#define FPGA_ADDR_DSP_VERSION 20
+#define FPGA_ADDR_DSP_MAGICID 24
 
-/* addresses for dsp access */
-#define SPI 0
-#define SERIAL 4
-#define DSPCTRL 8
-#define DSPSTAT 12
-#define DSPCFG 16
-#define VERSIONNR 20
-#define MAGICID 24
+/* fpga dsp ctrl bits */
+#define FPGA_DSP_CTRL_BIT_RESET (1<<7)
+#define FPGA_DSP_CTRL_BIT_IRQ2 (1<<1)
+
+/* fpga dsp cfg bits */
+#define FPGA_DSP_CFG_BIT_IRQ_ENABLE (1<<0)
+
+/* dsp 'magic' identifiation values */
+#define ADSP_21262_1_MAGIC 0xAA55BB44
+#define ADSP_21362_1_MAGIC 0xAA55CC33
 
 /* dsp internal data memory space */
-#define DSPDataMemBase21262 0x82800
-#define DSPDataMemTop21262 0x87FFF
+#define ADSP_DATA_MEM_BASE_21262   0x82800
+#define ADSP_DATA_MEM_TOP_21262    0x87FFF
 
-#define DSPDataMemBase21362_1 0xE0800
-#define DSPDataMemTop21362_1 0xE3FFF
+#define ADSP_DATA_MEM_BASE_21262_1 0xE0800
+#define ADSP_DATA_MEM_TOP_21262_1  0xE3FFF
 
-#define DSPDataMemBase21362_2 0x98180
-#define DSPDataMemTop21362_2 0x9FFFF
+#define ADSP_DATA_MEM_BASE_21362_2 0x98180
+#define ADSP_DATA_MEM_TOP_21362_2  0x9FFFF
 
-/* commands for initialization of dsp internal serial interface
+/* dsp commands for initialization of dsp internal serial interface
    and dma, which work as host interface port emulation */
-#define DSPREAD 0x80000001
-#define DSPWRITE 0x00000001
+#define DSP_CMD_READ  0x80000001
+#define DSP_CMD_WRITE 0x00000001
 
-/* ---------------------- device specific helpers ---------------------- */
-int fpga_reset(struct zfpga_node_data *node_data)
-{
-#ifdef DEBUG
-	dev_info(&node_data->pdev->dev, "%s entered\n", __func__);
-#endif
-	/*gpio_set_value(zFPGA_platform_data.gpio_reset, 1);
-	udelay(10);
-	gpio_set_value(zFPGA_platform_data.gpio_reset, 0);*/
-	/* resetting causes unconfigured state */
-	clear_bit(FLAG_GLOBAL_FPGA_CONFIGURED, &global_flags);
-	return 0;
-}
+struct dsp_bootheader {
+	u32 tag;
+	u32 count;
+	u32 address;
+};
+
+/* dsp boot block tags */
+enum dsp_boot_block_tagg {
+	DSP_BOOT_BLOCK_FINALINIT = 0,
+	DSP_BOOT_BLOCK_ZERO_LDATA,
+	DSP_BOOT_BLOCK_ZERO_L48,
+	DSP_BOOT_BLOCK_INIT_L16,
+	DSP_BOOT_BLOCK_INIT_L32,
+	DSP_BOOT_BLOCK_INIT_L48,
+	DSP_BOOT_BLOCK_INIT_L64,
+	DSP_BOOT_BLOCK_ZERO_EXT8,
+	DSP_BOOT_BLOCK_ZERO_EXT16,
+
+	DSP_BOOT_BLOCK_COUNT
+};
 
 /* ---------------------- common fops helper ---------------------- */
 static void* check_and_alloc_kmem(const struct zfpga_node_data *node_data, size_t count, loff_t *offset)
@@ -156,16 +170,16 @@ static void* check_and_alloc_kmem(const struct zfpga_node_data *node_data, size_
 			/* Note: dsp is NOT memory mapped 1:1. An offset in our device node
 			 * is transferred to dsp by fpga. Therefore memory limits depend on
 			 * dsp type connected */
-			if ( node_data->dsp_magic_id == adsp_21262_1_magic) {
-				if ( (*offset < DSPDataMemBase21262) ||
-						((*offset + len32) > DSPDataMemTop21262) ||
+			if ( node_data->dsp_magic_id == ADSP_21262_1_MAGIC) {
+				if ( (*offset < ADSP_DATA_MEM_BASE_21262) ||
+						((*offset + len32) > ADSP_DATA_MEM_TOP_21262) ||
 						(count & 3))
 					ret = -EFAULT; /* bad adress */
 			}
 			else
 			{
-				if ( (((*offset < DSPDataMemBase21362_1) || ((*offset + len32) > DSPDataMemTop21362_1)) &&
-					   ((*offset < DSPDataMemBase21362_2) || ((*offset + len32) > DSPDataMemTop21362_2))) || (count & 3))
+				if ( (((*offset < ADSP_DATA_MEM_BASE_21262_1) || ((*offset + len32) > ADSP_DATA_MEM_TOP_21262_1)) &&
+					   ((*offset < ADSP_DATA_MEM_BASE_21362_2) || ((*offset + len32) > ADSP_DATA_MEM_TOP_21362_2))) || (count & 3))
 					ret = -EFAULT; /* bad adress */;
 			}
 			if(ret) {
@@ -209,9 +223,9 @@ static int fo_open(struct inode *inode, struct file *file)
 	}
 	/* dsp devices need identification to determine memory limits */
 	if(node_data->nodetype == NODE_TYPE_DSP) {
-		node_data->dsp_magic_id = ioread32(node_data->base + MAGICID);
-		if (node_data->dsp_magic_id != adsp_21262_1_magic &&
-			node_data->dsp_magic_id != adsp_21362_1_magic) {
+		node_data->dsp_magic_id = ioread32(node_data->base + FPGA_ADDR_DSP_MAGICID);
+		if (node_data->dsp_magic_id != ADSP_21262_1_MAGIC &&
+			node_data->dsp_magic_id != ADSP_21362_1_MAGIC) {
 			dev_info(
 				&node_data->pdev->dev,
 				"unknown dsp magic id 0x%08X read for %s!\n",
@@ -275,13 +289,13 @@ static ssize_t fo_read (struct file *file, char *buf, size_t count, loff_t *offs
 			break;
 		case NODE_TYPE_DSP:
 			/* dsp-device reads data 32bitwise from single fixed address in fpga */
-			source32 = node_data->base + SERIAL;
+			source32 = node_data->base + FPGA_ADDR_DSP_SERIAL;
 			dest32 = kbuff;
 			transaction_count = count>>2;
 			/* serial interface and dma initialization */
-			iowrite32(DSPREAD, node_data->base + SPI);
-			iowrite32(*offset, node_data->base + SPI);
-			iowrite32(transaction_count, node_data->base + SPI);
+			iowrite32(DSP_CMD_READ, node_data->base + FPGA_ADDR_DSP_SPI);
+			iowrite32(*offset, node_data->base + FPGA_ADDR_DSP_SPI);
+			iowrite32(transaction_count, node_data->base + FPGA_ADDR_DSP_SPI);
 			/*udelay(100); give the dsp 100 uS for initialzing serial and dma */
 			for (transaction_no=0; transaction_no<transaction_count; transaction_no++) {
 				*dest32 = ioread32(source32);
@@ -360,12 +374,12 @@ static ssize_t fo_write (struct file *file, const char *buf, size_t count, loff_
 		case NODE_TYPE_DSP:
 			/* dsp-device writes data 32bitwise to single fixed address in fpga */
 			source32 = kbuff;
-			dest32 = node_data->base + SERIAL;
+			dest32 = node_data->base + FPGA_ADDR_DSP_SERIAL;
 			transaction_count = count>>2;
 			/* serial interface and dma initialization */
-			iowrite32(DSPWRITE, node_data->base + SPI);
-			iowrite32(*offset, node_data->base + SPI);
-			iowrite32(transaction_count, node_data->base + SPI);
+			iowrite32(DSP_CMD_WRITE, node_data->base + FPGA_ADDR_DSP_SPI);
+			iowrite32(*offset, node_data->base + FPGA_ADDR_DSP_SPI);
+			iowrite32(transaction_count, node_data->base + FPGA_ADDR_DSP_SPI);
 			/*udelay(100); give the dsp 100 uS for initialzing serial and dma */
 			for (transaction_no=0; transaction_no<transaction_count; transaction_no++) {
 				iowrite32(*source32++, dest32);
@@ -408,11 +422,196 @@ static int fo_fasync (int fd, struct file *file, int mode)
 	return (fasync_helper(fd, file, mode, &node_data->async_queue));
 }
 
-/* ---------------------- boot device fops ---------------------- */
-static long fo_ioctl_boot (struct file *file, unsigned int cmd, unsigned long arg)
+/* ---------------------- ioctl methods ---------------------- */
+int fpga_reset(const struct zfpga_node_data *node_data)
 {
 #ifdef DEBUG
+	dev_info(&node_data->pdev->dev, "%s entered for %s\n", __func__, node_data->nodename);
+#endif
+	/*gpio_set_value(zFPGA_platform_data.gpio_reset, 1);
+	udelay(10);
+	gpio_set_value(zFPGA_platform_data.gpio_reset, 0);*/
+	/* resetting causes unconfigured state */
+	clear_bit(FLAG_GLOBAL_FPGA_CONFIGURED, &global_flags);
+	return 0;
+}
+
+static int dsp_reset(struct zfpga_node_data *node_data)
+{
+	void* adr = node_data->base + FPGA_ADDR_DSP_CTRL;
+#ifdef DEBUG
+	dev_info(&node_data->pdev->dev, "%s entered for %s\n", __func__, node_data->nodename);
+#endif
+	iowrite32(ioread32(adr) | FPGA_DSP_CTRL_BIT_RESET, adr);
+	udelay(400); /* dsp requires 4096 CLKIN (25MHz) cycles after deasserting reset */
+	clear_bit(FLAG_DSP_RUNNING, &node_data->flags);
+	return 0;
+}
+
+static unsigned long dsp_get_boot_block_len(struct dsp_bootheader *h)
+{
+	unsigned long nr = h->count;
+	switch ( h->tag ) {
+		case DSP_BOOT_BLOCK_FINALINIT:	return 0x600; /* fix length */
+		case DSP_BOOT_BLOCK_ZERO_LDATA:	return 0;
+		case DSP_BOOT_BLOCK_ZERO_L48:	return 0;
+		case DSP_BOOT_BLOCK_INIT_L16:	return (nr << 1);
+		case DSP_BOOT_BLOCK_INIT_L32:	return (nr << 2);
+		case DSP_BOOT_BLOCK_INIT_L48:	return (((nr + 1) & 0xFFFFFFFE) * 6);
+		case DSP_BOOT_BLOCK_INIT_L64:	return (nr << 3);
+		case DSP_BOOT_BLOCK_ZERO_EXT8:	return 0;
+		case DSP_BOOT_BLOCK_ZERO_EXT16:	return 0;
+	}
+	return nr;
+}
+
+static int dsp_boot(struct zfpga_node_data *node_data, unsigned long arg)
+{
+	unsigned long blocklen, transaction_no;
+	u32 *data;
+	void *kmem;
+	struct dsp_bootheader act_bootheader;
+	char *user_data = (char*) arg; /* here we can get what we need */
+
+	dsp_reset(node_data);
+	/* first data block to load is the dsp´s bootstrap loader
+	 * this block has no header */
+	act_bootheader.tag = DSP_BOOT_BLOCK_INIT_L48;
+	act_bootheader.count = 0x100; /* with fix length */
+	act_bootheader.address = 0x40000; /* and fix adress */
+#ifdef DEBUG
+	dev_info(
+		&node_data->pdev->dev,
+		"%s entering boot loop for %s\n",
+		__func__, node_data->nodename);
+#endif
+	for (;;) {
+		if (act_bootheader.tag >= DSP_BOOT_BLOCK_COUNT) {
+			dev_info(
+				&node_data->pdev->dev,
+				"%s invalid tag %u found for %s!\n",
+				__func__, act_bootheader.tag, node_data->nodename);
+			return -EFAULT;
+		}
+		blocklen = dsp_get_boot_block_len(&act_bootheader);
+#ifdef DEBUG
+		dev_info(
+			&node_data->pdev->dev,
+			"%s boot block: type %u length %lu start 0x%x\n",
+			__func__, act_bootheader.tag, blocklen, act_bootheader.address);
+#endif
+		/* is there data for current block header to send ? */
+		if (blocklen > 0) {
+			kmem = kmalloc(blocklen,GFP_KERNEL);
+			if (kmem == NULL) {
+				dev_info(
+					&node_data->pdev->dev,
+					"%s memory allocation for boot block data failed for %s\n",
+					__func__, node_data->nodename);
+				return -ENOMEM;
+			}
+			if (copy_from_user(kmem, user_data, blocklen)) {
+				dev_info(
+					&node_data->pdev->dev,
+					"%s copy_from_user for boot block data failed for %s\n",
+					__func__, node_data->nodename);
+				kfree(kmem);
+				return -EFAULT;
+			}
+			user_data += blocklen;
+			/* write all the data of the desired block to the FPGA_ADDR_DSP_SPI */
+			data = kmem;
+			for (transaction_no=0; transaction_no<(blocklen>>2); transaction_no++,data++)
+				iowrite32(*data, node_data->base + FPGA_ADDR_DSP_SPI);
+			kfree(kmem);
+			/* for each boot block wait at least 10 mS */
+			msleep(10);
+		}
+#ifdef DEBUG
+		dev_info(
+			&node_data->pdev->dev,
+			"%s boot datablock type %u done for %s\n",
+			__func__, act_bootheader.tag, node_data->nodename);
+#endif
+		if (act_bootheader.tag == DSP_BOOT_BLOCK_FINALINIT) {
+			break; /* we have finished */
+		}
+		/* read next boot header */
+		if (copy_from_user(&act_bootheader, user_data, sizeof(act_bootheader))) {
+			dev_info(
+				&node_data->pdev->dev,
+				"%s copy_from_user for boot block header failed for %s\n",
+				__func__, node_data->nodename);
+			return -EFAULT;
+		}
+		user_data += sizeof(act_bootheader);
+		/* send boot header */
+		iowrite32(act_bootheader.tag, node_data->base + FPGA_ADDR_DSP_SPI);
+		iowrite32(act_bootheader.count, node_data->base + FPGA_ADDR_DSP_SPI);
+		iowrite32(act_bootheader.address, node_data->base + FPGA_ADDR_DSP_SPI);
+		/* in case of ZeroX tag Headers there must be a delay of 2mS + act_bootheader.count * 100nS */
+		switch (act_bootheader.tag) {
+			case DSP_BOOT_BLOCK_FINALINIT: break;
+			case DSP_BOOT_BLOCK_INIT_L16: break;
+			case DSP_BOOT_BLOCK_INIT_L32: break;
+			case DSP_BOOT_BLOCK_INIT_L48: break;
+			case  DSP_BOOT_BLOCK_INIT_L64: break;
+			default: msleep(20); /* should be 2ms + count*100nS, count is max 1.5*2^16 */
+		}
+	}
+#ifdef DEBUG
+	dev_info(
+		&node_data->pdev->dev,
+		"%s booting successful for %s\n",
+		__func__, node_data->nodename);
+#endif
+	return 0;
+}
+
+static int dsp_int_generate(const struct zfpga_node_data *node_data)
+{
+	void* adr = node_data->base + FPGA_ADDR_DSP_CTRL;
+#ifdef DEBUG
+	dev_info(&node_data->pdev->dev, "%s entered for %s\n", __func__, node_data->nodename);
+#endif
+	iowrite32(ioread32(adr) | FPGA_DSP_CTRL_BIT_IRQ2, adr);
+	return 0;
+}
+
+static int dsp_int_enable(const struct zfpga_node_data *node_data)
+{
+	void* adr = node_data->base + FPGA_ADDR_DSP_CFG;
+#ifdef DEBUG
+	dev_info(&node_data->pdev->dev, "%s entered for %s\n", __func__, node_data->nodename);
+#endif
+	iowrite32(ioread32(adr) | FPGA_DSP_CFG_BIT_IRQ_ENABLE, adr);
+	return 0;
+}
+
+static int dsp_int_disable(const struct zfpga_node_data *node_data)
+{
+	void* adr = node_data->base + FPGA_ADDR_DSP_CFG;
+#ifdef DEBUG
+	dev_info(&node_data->pdev->dev, "%s entered for %s\n", __func__, node_data->nodename);
+#endif
+	iowrite32(ioread32(adr) & (~FPGA_DSP_CFG_BIT_IRQ_ENABLE), adr);
+	return 0;
+}
+
+static int dsp_read_io(const struct zfpga_node_data *node_data, unsigned long arg)
+{	// reads the register[num] with num in arg
+	void* adr = node_data->base + (arg << 2);
+#ifdef DEBUG
+	dev_info(&node_data->pdev->dev, "%s entered for %s\n", __func__, node_data->nodename);
+#endif
+	return ioread32(adr);
+}
+
+/* ---------------------- device specific ioctls ---------------------- */
+static long fo_ioctl_boot (struct file *file, unsigned int cmd, unsigned long arg)
+{
 	struct zfpga_node_data *node_data = file->private_data;
+#ifdef DEBUG
 	dev_info(
 		&node_data->pdev->dev,
 		"%s entered for %s, cmd: 0x%x, arg: %lx\n",
@@ -429,7 +628,6 @@ static long fo_ioctl_boot (struct file *file, unsigned int cmd, unsigned long ar
 	}
 }
 
-/* ---------------------- dsp device specific fops ----------------------- */
 long fo_ioctl_dsp(struct file *file, unsigned int cmd, unsigned long arg)
 {
 #ifdef DEBUG
@@ -440,12 +638,12 @@ long fo_ioctl_dsp(struct file *file, unsigned int cmd, unsigned long arg)
 		__func__, node_data->nodename, cmd, arg);
 #endif
 	switch ( cmd ) {
-		/*case DSP_RESET: return(reset_dsp(file));
-		case DSP_BOOT: return(boot_dsp(file, arg));
-		case DSP_INT_REQ: return(int_dsp(file));
-		case DSP_INT_ENABLE: return(int_dsp_enable(file));
-		case DSP_INT_DISABLE: return(int_dsp_disable(file));
-		case IO_READ: return(read_io(file,arg));*/
+		case DSP_RESET: return(dsp_reset(node_data));
+		case DSP_BOOT: return(dsp_boot(node_data, arg));
+		case DSP_INT_REQ: return(dsp_int_generate(node_data));
+		case DSP_INT_ENABLE: return(dsp_int_enable(node_data));
+		case DSP_INT_DISABLE: return(dsp_int_disable(node_data));
+		case IO_READ: return(dsp_read_io(node_data, arg));
 		default:
 			dev_info(
 				&node_data->pdev->dev,
@@ -617,14 +815,14 @@ static int check_dt_settings(struct platform_device *pdev, struct zfpga_dev_data
 			/* There must be only one boot device in the system */
 			if (test_bit(FLAG_GLOBAL_FPGA_BOOT_DEVICE_FOUND, &global_flags)) {
 				dev_info(&pdev->dev, "%s tries to set up a second boot device!\n",
-					child_node->full_name);
+					zfpga->nodes[zfpga->count_nodes].nodename);
 				ret = -EINVAL;
 				goto exit;
 			}
 			else {
 				ret = fpga_reset(&zfpga->nodes[zfpga->count_nodes]);
 				if (ret) {
-					pr_info( "zfpga: unable to reset FPGA!\n");
+					dev_info(&pdev->dev, "zfpga: unable to reset FPGA!\n");
 					goto exit;
 				}
 				set_bit(FLAG_GLOBAL_FPGA_BOOT_DEVICE_FOUND, &global_flags);
@@ -661,6 +859,7 @@ exit:
 	return ret;
 }
 
+/* ---------------------- kernel module interface ---------------------- */
 static int zfpga_probe(struct platform_device *pdev)
 {
 	const struct of_device_id *match;

@@ -52,24 +52,38 @@ static volatile unsigned long global_flags = 0;
 #define FLAG_GLOBAL_FPGA_BOOT_DEVICE_FOUND 0  /* used to ensure assumption above */
 #define FLAG_GLOBAL_FPGA_CONFIGURED 1         /* keep fpga booted/configured state */
 
+/* node type specific data definitions */
+struct boot_data {
+	int gpio_done;
+	int gpio_reset;
+};
+
+struct reg_data {
+    /* TODO */
+	struct fasync_struct *aqueue;
+};
+
+struct dsp_data {
+	u32 dsp_magic_id;             /* dsp type identification */
+    /* TODO */
+	struct fasync_struct *aqueue;
+};
+
 /* device node date: further information on device nodes / devices below */
 struct zfpga_node_data {
 	const char *nodename;
 	u8 nodetype;
 	void __iomem *base;           /* io mem region address */
 	resource_size_t size;         /* io mem region size */
-	struct cdev cdev;             /* char device: hooks to our intsance in fop callbacks */
+	struct cdev cdev;             /* char device: hooks to our instance in fop callbacks */
 	struct device *device;        /* just in case we want to add entries to sysfs later */
-	struct platform_device *pdev; /* don't forget our parent */
-
-    /* TODO */
-	struct fasync_struct *aqueue; /* for used interrupt */
-
-	/* per node flags - data type is arch specific for atomic bit access */
-	volatile unsigned long flags;
-
-	/* dsp type identification */
-	u32 dsp_magic_id;
+	struct platform_device *pdev; /* don't forget our grandparent */
+	volatile unsigned long flags; /* data type is arch specific for atomic bit access */
+    union node_specific {
+		struct boot_data boot;
+		struct reg_data reg;
+		struct dsp_data dsp;
+	} node_specifc_data;
 };
 
 /* per node flags */
@@ -180,7 +194,7 @@ static void* check_and_alloc_kmem(const struct zfpga_node_data *node_data, size_
 			/* Note: dsp is NOT memory mapped 1:1. An offset in our device node
 			 * is transferred to dsp by fpga. Therefore memory limits depend on
 			 * dsp type connected */
-			if ( node_data->dsp_magic_id == ADSP_21262_1_MAGIC) {
+			if ( node_data->node_specifc_data.dsp.dsp_magic_id == ADSP_21262_1_MAGIC) {
 				if ( (*offset < ADSP_DATA_MEM_BASE_21262) ||
 						((*offset + len32) > ADSP_DATA_MEM_TOP_21262) ||
 						(count & 3))
@@ -233,13 +247,14 @@ static int fo_open(struct inode *inode, struct file *file)
 	}
 	/* dsp devices need identification to determine memory limits */
 	if(node_data->nodetype == NODE_TYPE_DSP) {
-		node_data->dsp_magic_id = ioread32(node_data->base + FPGA_ADDR_DSP_MAGICID);
-		if (node_data->dsp_magic_id != ADSP_21262_1_MAGIC &&
-			node_data->dsp_magic_id != ADSP_21362_1_MAGIC) {
+		node_data->node_specifc_data.dsp.dsp_magic_id = 
+			ioread32(node_data->base + FPGA_ADDR_DSP_MAGICID);
+		if (node_data->node_specifc_data.dsp.dsp_magic_id != ADSP_21262_1_MAGIC &&
+			node_data->node_specifc_data.dsp.dsp_magic_id != ADSP_21362_1_MAGIC) {
 			dev_info(
 				&node_data->pdev->dev,
 				"unknown dsp magic id 0x%08X read for %s!\n",
-				node_data->dsp_magic_id, node_data->nodename);
+				node_data->node_specifc_data.dsp.dsp_magic_id, node_data->nodename);
 			return -ENODEV;
 		}
 	}
@@ -423,13 +438,28 @@ static loff_t fo_lseek(struct file *file, loff_t offset, int origin)
 static int fo_fasync (int fd, struct file *file, int mode)
 {
 	struct zfpga_node_data *node_data = file->private_data;
+	struct fasync_struct** async_callback = NULL;
 #ifdef DEBUG
 	dev_info(
 		&node_data->pdev->dev,
 		"%s entered for %s\n",
 		__func__, node_data->nodename);
 #endif
-	return (fasync_helper(fd, file, mode, &node_data->aqueue));
+	switch(node_data->nodetype)
+	{
+		case NODE_TYPE_REG:
+			async_callback = &node_data->node_specifc_data.reg.aqueue;
+			break;
+		case NODE_TYPE_DSP:
+			async_callback = &node_data->node_specifc_data.dsp.aqueue;
+			break;
+	}
+	if(async_callback) {
+		return (fasync_helper(fd, file, mode, async_callback));
+	}
+	else {
+		return -EFAULT;
+	}
 }
 
 /* ---------------------- ioctl helper methods ---------------------- */

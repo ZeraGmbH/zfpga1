@@ -45,33 +45,43 @@ enum node_types {
 };
 
 /* Flags singleton:
-   * Assumption: We have one fpga hardware in our system.
-   * data type is arch specific for atomic bit access */
+   * Assumption: We have one fpga hardware and therefore boot device in our
+   * system. Data type is arch specific for atomic bit access */
 static volatile unsigned long global_flags = 0;
 
 #define FLAG_GLOBAL_FPGA_BOOT_DEVICE_FOUND 0  /* used to ensure assumption above */
-#define FLAG_GLOBAL_FPGA_CONFIGURED 1         /* booted ? */
+#define FLAG_GLOBAL_FPGA_CONFIGURED 1         /* keep fpga booted/configured state */
 
+/* device node date: further information on device nodes / devices below */
 struct zfpga_node_data {
 	const char *nodename;
 	u8 nodetype;
-	void __iomem *base;
-	resource_size_t size;
-	struct cdev cdev;
-	struct device *device; /* keep it just in case we want to add entries to sysfs later */
-	struct platform_device *pdev;
-	struct fasync_struct *async_queue; /* for used interrupt */
+	void __iomem *base;           /* io mem region address */
+	resource_size_t size;         /* io mem region size */
+	struct cdev cdev;             /* char device: hooks to our intsance in fop callbacks */
+	struct device *device;        /* just in case we want to add entries to sysfs later */
+	struct platform_device *pdev; /* don't forget our parent */
 
-	/* per device flags - data type is arch specific for atomic bit access */
+    /* TODO */
+	struct fasync_struct *aqueue; /* for used interrupt */
+
+	/* per node flags - data type is arch specific for atomic bit access */
 	volatile unsigned long flags;
+
 	/* dsp type identification */
 	u32 dsp_magic_id;
 };
 
-/* per device flags */
+/* per node flags */
 #define FLAG_OPEN        (1<<0)	/* avoid file opened  more than once */
 #define FLAG_DSP_RUNNING (1<<1)	/* keep track of dsp running state */
 
+/* device data
+ * Note: each devicetree node compatible to "zera,zfpga-1" creates a device
+ * and multiple devices can be created. Although confusing this can be
+ * neccessary: e.g fsl-weim driver forces us to create one device per
+ * chip-select line configured. A device can contain a free number of
+ * device nodes - these create and handle userpace IO in /dev. */
 struct zfpga_dev_data {
 	struct zfpga_node_data nodes[MAX_NODE_COUNT];
 	unsigned int count_nodes;
@@ -419,15 +429,16 @@ static int fo_fasync (int fd, struct file *file, int mode)
 		"%s entered for %s\n",
 		__func__, node_data->nodename);
 #endif
-	return (fasync_helper(fd, file, mode, &node_data->async_queue));
+	return (fasync_helper(fd, file, mode, &node_data->aqueue));
 }
 
-/* ---------------------- ioctl methods ---------------------- */
+/* ---------------------- ioctl helper methods ---------------------- */
 int fpga_reset(const struct zfpga_node_data *node_data)
 {
 #ifdef DEBUG
 	dev_info(&node_data->pdev->dev, "%s entered for %s\n", __func__, node_data->nodename);
 #endif
+    /* TODO */
 	/*gpio_set_value(zFPGA_platform_data.gpio_reset, 1);
 	udelay(10);
 	gpio_set_value(zFPGA_platform_data.gpio_reset, 0);*/
@@ -465,13 +476,16 @@ static unsigned long dsp_get_boot_block_len(struct dsp_bootheader *h)
 	return nr;
 }
 
+/* ioctl's arg for dsp booting contains dsp's boot file. This is organized
+ * as sequence of blocks of different types see 
+ * "VisualDSP++ / Loader and Utilities Manual" for more details */
 static int dsp_boot(struct zfpga_node_data *node_data, unsigned long arg)
 {
 	unsigned long blocklen, transaction_no;
 	u32 *data;
 	void *kmem;
 	struct dsp_bootheader act_bootheader;
-	char *user_data = (char*) arg; /* here we can get what we need */
+	char *user_data = (char*) arg;
 
 	dsp_reset(node_data);
 	/* first data block to load is the dsp´s bootstrap loader
@@ -607,7 +621,7 @@ static int dsp_read_io(const struct zfpga_node_data *node_data, unsigned long ar
 	return ioread32(adr);
 }
 
-/* ---------------------- device specific ioctls ---------------------- */
+/* ---------------------- ioctls ---------------------- */
 static long fo_ioctl_boot (struct file *file, unsigned int cmd, unsigned long arg)
 {
 	struct zfpga_node_data *node_data = file->private_data;

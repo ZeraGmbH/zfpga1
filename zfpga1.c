@@ -44,7 +44,7 @@ enum node_types {
 	NODE_TYPE_COUNT
 };
 
-/* Flags singleton:
+/* global flags singleton:
    * Assumption: We have one fpga hardware and therefore boot device in our
    * system. Data type is arch specific for atomic bit access */
 static volatile unsigned long global_flags = 0;
@@ -67,6 +67,7 @@ struct dsp_data {
 	u32 dsp_magic_id;             /* dsp type identification */
     /* TODO */
 	struct fasync_struct *aqueue;
+	int gpio_irq;
 };
 
 /* device node data: further information on device nodes / devices below */
@@ -468,13 +469,17 @@ int fpga_reset(const struct zfpga_node_data *node_data)
 #ifdef DEBUG
 	dev_info(&node_data->pdev->dev, "%s entered for %s\n", __func__, node_data->nodename);
 #endif
-    /* TODO */
-	/*gpio_set_value(zFPGA_platform_data.gpio_reset, 1);
-	udelay(10);
-	gpio_set_value(zFPGA_platform_data.gpio_reset, 0);*/
-	/* resetting causes unconfigured state */
-	clear_bit(FLAG_GLOBAL_FPGA_CONFIGURED, &global_flags);
-	return 0;
+	if (node_data->nodetype == NODE_TYPE_BOOT) {
+		gpio_set_value(node_data->node_specifc_data.boot.gpio_reset, 1);
+		udelay(10);
+		gpio_set_value(node_data->node_specifc_data.boot.gpio_reset, 1);
+		/* resetting causes unconfigured state */
+		clear_bit(FLAG_GLOBAL_FPGA_CONFIGURED, &global_flags);
+		return 0;
+	}
+	dev_info(&node_data->pdev->dev, "%s was called for %s which is not a boot node!\n",
+		__func__, node_data->nodename);
+	return -EFAULT;
 }
 
 static int dsp_reset(struct zfpga_node_data *node_data)
@@ -803,6 +808,32 @@ exit:
 	return ret;
 }
 
+/* ---------------------- gpio helper ---------------------- */
+static int create_gpio(struct zfpga_node_data *znode, struct device_node *dtnode, unsigned long flags, const char *name, int *gpio_var)
+{
+	int gpio;
+	int ret = 0;
+
+	if(gpio_is_valid(gpio = of_get_named_gpio(dtnode, name, 0)) &&
+		!devm_gpio_request_one(
+			&znode->pdev->dev,
+			gpio,
+			flags,
+			name)) {
+		*gpio_var = gpio;
+#ifdef DEBUG
+		dev_info(&znode->pdev->dev, "%s opened for %s\n",
+			name, znode->nodename);
+#endif
+	}
+	else {
+		dev_info(&znode->pdev->dev, "could not open %s for %s!\n",
+			name, znode->nodename);
+		ret = -EINVAL;
+	}
+	return ret;
+}
+
 /* ---------------------- apply devicetree settings ----------------------
  * - setup zfpga_dev_data *zfpga
  * - ioremap
@@ -894,6 +925,41 @@ static int check_dt_settings(struct platform_device *pdev, struct zfpga_dev_data
 				zfpga->nodes[zfpga->count_nodes].base,
 				zfpga->nodes[zfpga->count_nodes].size);
 #endif
+		/* device specific entires */
+		switch (zfpga->nodes[zfpga->count_nodes].nodetype) {
+			case NODE_TYPE_BOOT:
+				ret = create_gpio(
+					&zfpga->nodes[zfpga->count_nodes],
+					child_node,
+					GPIOF_DIR_OUT,
+					"gpio-reset",
+					&zfpga->nodes[zfpga->count_nodes].node_specifc_data.boot.gpio_reset);
+				if(ret) {
+					goto exit;
+				}
+				ret = create_gpio(
+					&zfpga->nodes[zfpga->count_nodes],
+					child_node,
+					GPIOF_DIR_IN,
+					"gpio-done",
+					&zfpga->nodes[zfpga->count_nodes].node_specifc_data.boot.gpio_done);
+				if(ret) {
+					goto exit;
+				}
+				/* TODO gpio reset irq */
+				break;
+			case NODE_TYPE_DSP:
+				ret = create_gpio(
+					&zfpga->nodes[zfpga->count_nodes],
+					child_node,
+					GPIOF_DIR_IN,
+					"gpio-irq",
+					&zfpga->nodes[zfpga->count_nodes].node_specifc_data.dsp.gpio_irq);
+				if(ret) {
+					goto exit;
+				}
+				break;
+		}
 		/* next node */
 		zfpga->count_nodes++;
 	}

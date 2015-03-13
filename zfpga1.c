@@ -69,7 +69,7 @@ struct dsp_data {
 	struct fasync_struct *aqueue;
 };
 
-/* device node date: further information on device nodes / devices below */
+/* device node data: further information on device nodes / devices below */
 struct zfpga_node_data {
 	const char *nodename;
 	u8 nodetype;
@@ -160,12 +160,12 @@ enum dsp_boot_block_tagg {
 };
 
 /* ---------------------- common fops helper ---------------------- */
-static void* check_and_alloc_kmem(const struct zfpga_node_data *node_data, size_t count, loff_t *offset)
+static void* fops_check_and_alloc_kmem(const struct zfpga_node_data *node_data, size_t count, loff_t *offset)
 {
 	size_t len32;
 	int ret;
 
-	switch(node_data->nodetype) {
+	switch (node_data->nodetype) {
 		case NODE_TYPE_BOOT: /* Not booting twice incidentally */
 			if (test_bit(FLAG_GLOBAL_FPGA_CONFIGURED, &global_flags)) {
 				dev_info(
@@ -292,7 +292,7 @@ static ssize_t fo_read (struct file *file, char *buf, size_t count, loff_t *offs
 		"%s offset: 0x%llx, length: 0x%zx for %s\n",
 		__func__, *offset, count, node_data->nodename);
 #endif
-	kbuff = check_and_alloc_kmem(node_data, count, offset);
+	kbuff = fops_check_and_alloc_kmem(node_data, count, offset);
 	if (IS_ERR(kbuff)) {
 		dev_info(
 			&node_data->pdev->dev,
@@ -300,7 +300,7 @@ static ssize_t fo_read (struct file *file, char *buf, size_t count, loff_t *offs
 			__func__, node_data->nodename, PTR_ERR(kbuff));
 		return PTR_ERR(kbuff);
 	}
-	switch(node_data->nodetype) {
+	switch (node_data->nodetype) {
 		case NODE_TYPE_REG:
 			/* reg-device reads data 32bitwise mapped 1:1 */
 			source32 = node_data->base + *offset;
@@ -355,7 +355,7 @@ static ssize_t fo_write (struct file *file, const char *buf, size_t count, loff_
 		"%s offset: 0x%llx, length: 0x%zx for %s\n",
 		__func__, *offset, count, node_data->nodename);
 #endif
-	kbuff = check_and_alloc_kmem(node_data, count, offset);
+	kbuff = fops_check_and_alloc_kmem(node_data, count, offset);
 	if (IS_ERR(kbuff)) {
 		dev_info(
 			&node_data->pdev->dev,
@@ -372,7 +372,7 @@ static ssize_t fo_write (struct file *file, const char *buf, size_t count, loff_
 		kfree(kbuff);
 		return -EFAULT;
 	}
-	switch(node_data->nodetype) {
+	switch (node_data->nodetype) {
 		case NODE_TYPE_BOOT:
 			/* boot-device writes data bytewise to single fixed address - later
 			 * fpga versions accept 16bitwise data but ot be compatible we
@@ -445,7 +445,7 @@ static int fo_fasync (int fd, struct file *file, int mode)
 		"%s entered for %s\n",
 		__func__, node_data->nodename);
 #endif
-	switch(node_data->nodetype)
+	switch (node_data->nodetype)
 	{
 		case NODE_TYPE_REG:
 			async_callback = &node_data->node_specifc_data.reg.aqueue;
@@ -492,7 +492,7 @@ static int dsp_reset(struct zfpga_node_data *node_data)
 static unsigned long dsp_get_boot_block_len(struct dsp_bootheader *h)
 {
 	unsigned long nr = h->count;
-	switch ( h->tag ) {
+	switch (h->tag) {
 		case DSP_BOOT_BLOCK_FINALINIT:	return 0x600; /* fix length */
 		case DSP_BOOT_BLOCK_ZERO_LDATA:	return 0;
 		case DSP_BOOT_BLOCK_ZERO_L48:	return 0;
@@ -661,7 +661,7 @@ static long fo_ioctl_boot (struct file *file, unsigned int cmd, unsigned long ar
 		"%s entered for %s, cmd: 0x%x, arg: %lx\n",
 		__func__, node_data->nodename, cmd, arg);
 #endif
-	switch ( cmd ) {
+	switch (cmd) {
 		case FPGA_RESET: return(fpga_reset(node_data));
 		default:
 			dev_info(
@@ -681,7 +681,7 @@ long fo_ioctl_dsp(struct file *file, unsigned int cmd, unsigned long arg)
 		"%s entered for %s cmd: 0x%x, arg: %lx\n",
 		__func__, node_data->nodename, cmd, arg);
 #endif
-	switch ( cmd ) {
+	switch (cmd) {
 		case DSP_RESET: return(dsp_reset(node_data));
 		case DSP_BOOT: return(dsp_boot(node_data, arg));
 		case DSP_INT_REQ: return(dsp_int_generate(node_data));

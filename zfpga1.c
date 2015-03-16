@@ -19,6 +19,7 @@
 #include <linux/of_gpio.h>
 #include <linux/of_device.h>
 #include <linux/of_address.h>
+#include <linux/of_irq.h>
 
 #include "zfpga1.h"
 
@@ -67,7 +68,6 @@ struct dsp_data {
 	u32 dsp_magic_id;             /* dsp type identification */
     /* TODO */
 	struct fasync_struct *aqueue;
-	int gpio_irq;
 };
 
 /* device node data: further information on device nodes / devices below */
@@ -80,6 +80,7 @@ struct zfpga_node_data {
 	struct device *device;        /* just in case we want to add entries to sysfs later */
 	struct platform_device *pdev; /* don't forget our grandparent */
 	volatile unsigned long flags; /* data type is arch specific for atomic bit access */
+	unsigned int irq;             /* interrupt number: >0 -> an interrupt was requested */
     union node_specific {
 		struct boot_data boot;
 		struct reg_data reg;
@@ -119,6 +120,10 @@ struct zfpga_dev_data {
 
 /* fpga dsp cfg bits */
 #define FPGA_DSP_CFG_BIT_IRQ_ENABLE (1<<0)
+
+/* fpga dsp status bits */
+#define FPGA_DSP_STAT_IRQ (1<<0)
+#define FPGA_DSP_STAT_TIMEOUT_IRQ  (1<<1)
 
 /* dsp 'magic' identifiation values */
 #define ADSP_21262_1_MAGIC 0xAA55BB44
@@ -614,6 +619,7 @@ static int dsp_boot(struct zfpga_node_data *node_data, unsigned long arg)
 		"%s booting successful for %s\n",
 		__func__, node_data->nodename);
 #endif
+	set_bit(FLAG_DSP_RUNNING, &node_data->flags);
 	return 0;
 }
 
@@ -808,6 +814,23 @@ exit:
 	return ret;
 }
 
+/* ---------------------- free device's interrupt ---------------------- */
+void devm_free_interrupts(struct platform_device *pdev, struct zfpga_dev_data *zfpga)
+{
+	unsigned int inode;
+
+	for (inode=0; inode<zfpga->count_nodes; inode++) {
+		if(zfpga->nodes[inode].irq) {
+#ifdef DEBUG
+			dev_info(&pdev->dev, "free interrupt %u for %s\n",
+				zfpga->nodes[inode].irq, zfpga->nodes[inode].nodename);
+#endif
+			free_irq(zfpga->nodes[inode].irq, &zfpga->nodes[inode]);
+			zfpga->nodes[inode].irq = 0;
+		}
+	}
+}
+
 /* ---------------------- gpio helper ---------------------- */
 static int create_gpio(struct zfpga_node_data *znode, struct device_node *dtnode, unsigned long flags, const char *name, int *gpio_var)
 {
@@ -822,14 +845,102 @@ static int create_gpio(struct zfpga_node_data *znode, struct device_node *dtnode
 			name)) {
 		*gpio_var = gpio;
 #ifdef DEBUG
-		dev_info(&znode->pdev->dev, "%s opened for %s\n",
+		dev_info(&znode->pdev->dev, "gpio '%s' request ok for %s\n",
 			name, znode->nodename);
 #endif
 	}
 	else {
-		dev_info(&znode->pdev->dev, "could not open %s for %s!\n",
+		dev_info(&znode->pdev->dev, "gpio '%s' request failed for %s!\n",
 			name, znode->nodename);
 		ret = -EINVAL;
+	}
+	return ret;
+}
+
+/* ---------------------- interrupt handler ---------------------- */
+static irqreturn_t boot_isr (int irq_nr, void *dev_id)
+{
+	struct zfpga_node_data *znode = dev_id;
+	irqreturn_t ret = IRQ_NONE;
+
+#ifdef DEBUG
+	pr_info("%s entered int %u for %s!\n",
+		__func__, irq_nr, znode->nodename);
+#endif
+	if (znode->nodetype == NODE_TYPE_BOOT) {
+		if (gpio_get_value(znode->node_specifc_data.boot.gpio_done)) {
+			set_bit(FLAG_GLOBAL_FPGA_CONFIGURED, &global_flags);
+		}
+		else {
+			clear_bit(FLAG_GLOBAL_FPGA_CONFIGURED, &global_flags);
+		}
+		ret = IRQ_HANDLED;
+	}
+	else {
+		pr_info("%s: irq for non boot device %s received ?!\n", 
+			__func__, znode->nodename);
+	}
+	return ret;
+}
+
+static irqreturn_t reg_isr (int irq_nr, void *dev_id)
+{
+	struct zfpga_node_data *znode = dev_id;
+	irqreturn_t ret = IRQ_NONE;
+
+#ifdef DEBUG
+	pr_info("%s entered int %u for %s!\n",
+		__func__, irq_nr, znode->nodename);
+#endif
+	if (znode->nodetype == NODE_TYPE_REG) {
+		/* TODO ? */
+	}
+	else {
+		pr_info("%s: irq for non reg device %s received ?!\n", 
+			__func__, znode->nodename);
+	}
+	return ret;
+}
+
+static irqreturn_t dsp_isr(int irq_nr, void *dev_id)
+{
+	struct zfpga_node_data *znode = dev_id;
+	u32 status;
+	void* adr = znode->base + FPGA_ADDR_DSP_STAT;
+	irqreturn_t ret = IRQ_NONE;
+
+#ifdef DEBUG
+	pr_info("%s entered int %u for %s\n", __func__, irq_nr, znode->nodename);
+#endif
+
+	if (znode->nodetype == NODE_TYPE_DSP) {
+		status = ioread32(adr);
+#ifdef DEBUG
+		pr_info("irq status 0x%08x read for %s\n", status, znode->nodename);
+#endif
+		if (status & FPGA_DSP_STAT_IRQ) {
+			/* acknowledge irq + fasync */
+#ifdef DEBUG
+			pr_info("irq reset for %s\n", znode->nodename);
+#endif
+			iowrite32( FPGA_DSP_STAT_IRQ, adr); /* ack irq */
+			if (znode->node_specifc_data.dsp.aqueue) {
+				kill_fasync(&znode->node_specifc_data.dsp.aqueue, SIGIO, POLL_IN);
+			}
+			ret = IRQ_HANDLED;
+		}
+		if (status & FPGA_DSP_STAT_TIMEOUT_IRQ) {
+			/* acknowledge timeout irq - no further action */
+#ifdef DEBUG
+			pr_info("timeout irq reset for %s\n", znode->nodename);
+#endif // DEBUG
+			iowrite32(FPGA_DSP_STAT_TIMEOUT_IRQ, adr); /* quit irq */
+			ret = IRQ_HANDLED;
+		}
+	}
+	else {
+		pr_info("%s: irq for non dsp device %s received ?!\n", 
+			__func__, znode->nodename);
 	}
 	return ret;
 }
@@ -837,16 +948,19 @@ static int create_gpio(struct zfpga_node_data *znode, struct device_node *dtnode
 /* ---------------------- apply devicetree settings ----------------------
  * - setup zfpga_dev_data *zfpga
  * - ioremap
- * - interrupts TODO
+ * - interrupts
  */
 static int check_dt_settings(struct platform_device *pdev, struct zfpga_dev_data *zfpga)
 {
 	struct resource res;
 	u32 nodetype;
+	unsigned int irq;
+	irq_handler_t irqhandler;
+	struct zfpga_node_data *curr_node_data;
 	int ret = 0;
-	struct device_node *child_node = NULL;
+	struct device_node *child_node_dt = NULL;
 
-	while ((child_node = of_get_next_child(pdev->dev.of_node, child_node)) != NULL) {
+	while ((child_node_dt = of_get_next_child(pdev->dev.of_node, child_node_dt)) != NULL) {
 		/* avoid buffer overflow */
 		if (zfpga->count_nodes > MAX_NODE_COUNT) {
 			dev_info(&pdev->dev, "maximum node count %u reached in %s!\n",
@@ -854,35 +968,37 @@ static int check_dt_settings(struct platform_device *pdev, struct zfpga_dev_data
 				pdev->dev.of_node->full_name);
 			goto exit;
 		}
-		zfpga->nodes[zfpga->count_nodes].pdev = pdev;
+		curr_node_data = &zfpga->nodes[zfpga->count_nodes];
+
+		curr_node_data->pdev = pdev;
 		/* node's name */
 		if((ret = of_property_read_string(
-				child_node,
+				child_node_dt,
 				"nodename",
-				&zfpga->nodes[zfpga->count_nodes].nodename))) {
+				&curr_node_data->nodename))) {
 			dev_info(&pdev->dev, "missing/incorrect entry 'nodename' for %s!\n",
-				child_node->full_name);
+				child_node_dt->full_name);
 			goto exit;
 		}
 #ifdef DEBUG
 		dev_info(&pdev->dev, "entry 'nodename = %s' found in %s\n",
-				zfpga->nodes[zfpga->count_nodes].nodename,
-				child_node->full_name);
+				curr_node_data->nodename,
+				child_node_dt->full_name);
 #endif
 		/* node's type */
-		if((ret = of_property_read_u32(child_node, "nodetype", &nodetype))) {
+		if((ret = of_property_read_u32(child_node_dt, "nodetype", &nodetype))) {
 			dev_info(&pdev->dev, "missing/incorrect entry 'nodetype' in %s!\n",
-				child_node->full_name);
+				child_node_dt->full_name);
 			goto exit;
 		}
 #ifdef DEBUG
 		dev_info(&pdev->dev, "entry 'nodetype = %u' found in %s\n",
 				nodetype,
-				child_node->full_name);
+				child_node_dt->full_name);
 #endif
 		if(nodetype >= NODE_TYPE_COUNT) {
 			dev_info(&pdev->dev, "entry 'nodetype' out of limits in %s!\n",
-				child_node->full_name);
+				child_node_dt->full_name);
 			goto exit;
 		}
 		if(nodetype == NODE_TYPE_BOOT)
@@ -890,7 +1006,7 @@ static int check_dt_settings(struct platform_device *pdev, struct zfpga_dev_data
 			/* There must be only one boot device in the system */
 			if (test_bit(FLAG_GLOBAL_FPGA_BOOT_DEVICE_FOUND, &global_flags)) {
 				dev_info(&pdev->dev, "%s tries to set up a second boot device!\n",
-					zfpga->nodes[zfpga->count_nodes].nodename);
+					curr_node_data->nodename);
 				ret = -EINVAL;
 				goto exit;
 			}
@@ -903,62 +1019,77 @@ static int check_dt_settings(struct platform_device *pdev, struct zfpga_dev_data
 				set_bit(FLAG_GLOBAL_FPGA_BOOT_DEVICE_FOUND, &global_flags);
 			}
 		}
-		zfpga->nodes[zfpga->count_nodes].nodetype = (u8)nodetype;
+		curr_node_data->nodetype = (u8)nodetype;
 		/* setup node's memory region */
 		ret = of_address_to_resource(pdev->dev.of_node, zfpga->count_nodes, &res);
 		if (ret) {
 			dev_info(&pdev->dev, "can't get memory limits - 'reg' properly set in %s?\n",
-				child_node->full_name);
+				child_node_dt->full_name);
 			goto exit;
 		}
-		zfpga->nodes[zfpga->count_nodes].base = devm_ioremap_resource(&pdev->dev, &res);
-		if (IS_ERR(zfpga->nodes[zfpga->count_nodes].base)) {
+		curr_node_data->base = devm_ioremap_resource(&pdev->dev, &res);
+		if (IS_ERR(curr_node_data->base)) {
 			dev_info(&pdev->dev, "can't remap in %s\n",
-				child_node->full_name);
-			ret = PTR_ERR(zfpga->nodes[zfpga->count_nodes].base);
+				child_node_dt->full_name);
+			ret = PTR_ERR(curr_node_data->base);
 			goto exit;
 		}
-		zfpga->nodes[zfpga->count_nodes].size = resource_size(&res);
+		curr_node_data->size = resource_size(&res);
 #ifdef DEBUG
 		dev_info(&pdev->dev, "memory region remapped for %s to %p size 0x%08X\n",
-				zfpga->nodes[zfpga->count_nodes].nodename,
-				zfpga->nodes[zfpga->count_nodes].base,
-				zfpga->nodes[zfpga->count_nodes].size);
+				curr_node_data->nodename,
+				curr_node_data->base,
+				curr_node_data->size);
 #endif
 		/* device specific entires */
-		switch (zfpga->nodes[zfpga->count_nodes].nodetype) {
+	    irqhandler = NULL;
+		switch (curr_node_data->nodetype) {
 			case NODE_TYPE_BOOT:
+			    irqhandler = boot_isr;
 				ret = create_gpio(
 					&zfpga->nodes[zfpga->count_nodes],
-					child_node,
+					child_node_dt,
 					GPIOF_DIR_OUT,
 					"gpio-reset",
-					&zfpga->nodes[zfpga->count_nodes].node_specifc_data.boot.gpio_reset);
+					&curr_node_data->node_specifc_data.boot.gpio_reset);
 				if(ret) {
 					goto exit;
 				}
 				ret = create_gpio(
 					&zfpga->nodes[zfpga->count_nodes],
-					child_node,
+					child_node_dt,
 					GPIOF_DIR_IN,
 					"gpio-done",
-					&zfpga->nodes[zfpga->count_nodes].node_specifc_data.boot.gpio_done);
+					&curr_node_data->node_specifc_data.boot.gpio_done);
 				if(ret) {
 					goto exit;
 				}
-				/* TODO gpio reset irq */
+				break;
+			case NODE_TYPE_REG:
+			    irqhandler = reg_isr;
 				break;
 			case NODE_TYPE_DSP:
-				ret = create_gpio(
-					&zfpga->nodes[zfpga->count_nodes],
-					child_node,
-					GPIOF_DIR_IN,
-					"gpio-irq",
-					&zfpga->nodes[zfpga->count_nodes].node_specifc_data.dsp.gpio_irq);
-				if(ret) {
-					goto exit;
-				}
+			    irqhandler = dsp_isr;
 				break;
+		}
+		irq = irq_of_parse_and_map(child_node_dt, 0);
+		if (irq && irqhandler) {
+			ret = request_irq(
+				irq,
+				irqhandler,
+				IRQF_SHARED,
+				curr_node_data->nodename,
+				curr_node_data);
+			if (ret < 0) {
+				dev_info(&pdev->dev, "failed to request interrupt for %s\n",
+					curr_node_data->nodename);
+				goto exit;
+			}
+#ifdef DEBUG
+			dev_info(&pdev->dev, "interrupt %u requested for %s\n",
+				irq, curr_node_data->nodename);
+#endif
+			curr_node_data->irq = irq;
 		}
 		/* next node */
 		zfpga->count_nodes++;
@@ -966,6 +1097,8 @@ static int check_dt_settings(struct platform_device *pdev, struct zfpga_dev_data
 	return 0;
 
 exit:
+	/* remove interrupt handlers (other resources are managed)  */
+	devm_free_interrupts(pdev, zfpga);
 	return ret;
 }
 
@@ -1010,12 +1143,13 @@ static int zfpga_remove(struct platform_device *pdev)
 	struct zfpga_dev_data *zfpga;
 	unsigned int inode;
 #ifdef DEBUG
-	dev_info(&pdev->dev, "%s called\n", __func__);
+	dev_info(&pdev->dev, "%s entered\n", __func__);
 #endif
 	zfpga = platform_get_drvdata(pdev);
 	if (!IS_ERR(zfpga) && zfpga->count_nodes) {
+		devm_free_interrupts(pdev, zfpga);
 #ifdef DEBUG
-		dev_info(&pdev->dev, "%s removing char devices\n", __func__);
+		dev_info(&pdev->dev, "%s removing device nodes\n", __func__);
 #endif
 		for (inode=0; inode<zfpga->count_nodes; inode++) {
 #ifdef DEBUG

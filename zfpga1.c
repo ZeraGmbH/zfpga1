@@ -263,21 +263,6 @@ static int fo_open(struct inode *inode, struct file *file)
 	return 0;
 }
 
-static int fo_release(struct inode *inode, struct file *file)
-{
-	struct zfpga_node_data *node_data = file->private_data;
-	if (debug) {
-		dev_info(&node_data->pdev->dev, "%s for %s entered\n",
-			__func__, node_data->nodename);
-	}
-	clear_bit(FLAG_OPEN, &node_data->flags);
-	file->private_data = NULL;
-	if (debug) {
-		dev_info(&node_data->pdev->dev, "device %s closed\n", node_data->nodename);
-	}
-	return 0;
-}
-
 static ssize_t fo_read (struct file *file, char *buf, size_t count, loff_t *offset)
 {
 	void* kbuff;
@@ -417,7 +402,7 @@ static loff_t fo_lseek(struct file *file, loff_t offset, int origin)
 	return offset;
 }
 
-static int fo_fasync (int fd, struct file *file, int mode)
+static int fo_fasync(int fd, struct file *file, int mode)
 {
 	struct zfpga_node_data *node_data = file->private_data;
 	struct fasync_struct** async_callback = NULL;
@@ -440,6 +425,22 @@ static int fo_fasync (int fd, struct file *file, int mode)
 	else {
 		return -EFAULT;
 	}
+}
+
+static int fo_release(struct inode *inode, struct file *file)
+{
+	struct zfpga_node_data *node_data = file->private_data;
+	if (debug) {
+		dev_info(&node_data->pdev->dev, "%s for %s entered\n",
+			__func__, node_data->nodename);
+	}
+	fo_fasync(-1, file, 0); /* see ldd3 chapter 6.4 */
+	clear_bit(FLAG_OPEN, &node_data->flags);
+	file->private_data = NULL;
+	if (debug) {
+		dev_info(&node_data->pdev->dev, "device %s closed\n", node_data->nodename);
+	}
+	return 0;
 }
 
 /* ---------------------- ioctl helper methods ---------------------- */

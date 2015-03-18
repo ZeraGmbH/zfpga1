@@ -742,8 +742,7 @@ static int create_char_devices(struct platform_device *pdev, struct zfpga_dev_da
 				&pdev->dev,
 				zfpga->first_char_node+node_added_count,
 				NULL,
-				"%s%s",
-				FPGADEV_NAME,
+				"%s",
 				zfpga->nodes[node_added_count].nodename);
             if(IS_ERR(zfpga->nodes[node_added_count].device)) {
 				ret = PTR_ERR(zfpga->nodes[node_added_count].device);
@@ -997,6 +996,7 @@ static int check_dt_settings(struct platform_device *pdev, struct zfpga_dev_data
 				child_node_dt->full_name);
 			goto exit;
 		}
+		res.name = curr_node_data->nodename;
 		curr_node_data->base = devm_ioremap_resource(&pdev->dev, &res);
 		if (IS_ERR(curr_node_data->base)) {
 			dev_info(&pdev->dev, "can't remap in %s\n",

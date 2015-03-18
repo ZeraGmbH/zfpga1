@@ -24,7 +24,7 @@
 #include "zfpga1.h"
 
 /* module parameter keeper */
-static int debug = 0;
+static bool debug = 0;
 
 /* class for registering char devs */
 static struct class *zfpga_class;

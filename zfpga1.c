@@ -103,13 +103,13 @@ struct zfpga_dev_data {
 
 /* ---------------------- internal constants/structs  ---------------------- */
 /* fpga addresses for dsp access */
-#define FPGA_ADDR_DSP_SPI 0
-#define FPGA_ADDR_DSP_SERIAL 4
-#define FPGA_ADDR_DSP_CTRL 8
-#define FPGA_ADDR_DSP_STAT 12
-#define FPGA_ADDR_DSP_CFG 16
-#define FPGA_ADDR_DSP_VERSION 20
-#define FPGA_ADDR_DSP_MAGICID 24
+#define FPGA_ADDR_DSP_SPI 0x00
+#define FPGA_ADDR_DSP_SERIAL 0x04
+#define FPGA_ADDR_DSP_CTRL 0x08
+#define FPGA_ADDR_DSP_STAT 0x0c
+#define FPGA_ADDR_DSP_CFG 0x10
+#define FPGA_ADDR_DSP_VERSION 0x14
+#define FPGA_ADDR_DSP_MAGICID 0x18
 
 /* fpga dsp ctrl bits */
 #define FPGA_DSP_CTRL_BIT_RESET (1<<7)
@@ -852,7 +852,7 @@ static irqreturn_t boot_isr (int irq_nr, void *dev_id)
 	return ret;
 }
 
-static irqreturn_t reg_isr (int irq_nr, void *dev_id)
+static irqreturn_t reg_isr(int irq_nr, void *dev_id)
 {
 	struct zfpga_node_data *znode = dev_id;
 	irqreturn_t ret = IRQ_NONE;

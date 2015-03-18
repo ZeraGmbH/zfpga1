@@ -23,8 +23,10 @@
 
 #include "zfpga1.h"
 
+/* module parameter keeper */
 static int debug = 0;
 
+/* class for registering char devs */
 static struct class *zfpga_class;
 
 static const struct of_device_id zfpga_of_match[] = {
@@ -1168,11 +1170,15 @@ static int __init zfpga_init(void)
 	res = platform_driver_register(&zfpga_platform_driver);
 	if (res) {
 		pr_info( "zfpga: unable to register platform driver!\n");
-		goto exit;
+		goto exit_class;
 	}
 	if (debug) {
 		pr_info( "zfpga: platform driver registered\n");
 	}
+	return 0;
+
+exit_class:
+	class_destroy(zfpga_class);
 exit:
 	return res;
 }

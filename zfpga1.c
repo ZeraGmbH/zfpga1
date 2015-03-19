@@ -354,6 +354,10 @@ static ssize_t fo_write (struct file *file, const char *buf, size_t count, loff_
 			dest8 = node_data->base;
 			transaction_count = count;
 			for(transaction_no=0; transaction_no<transaction_count; transaction_no++) {
+				if (debug) {
+					dev_info(&node_data->pdev->dev, "%s: 0x%02x written for %s\n",
+						__func__, *source8, node_data->nodename);
+				}
 				iowrite8(*source8, dest8);
 				source8++;
 			}
@@ -365,6 +369,10 @@ static ssize_t fo_write (struct file *file, const char *buf, size_t count, loff_
 			transaction_count = count>>2;
 			for (transaction_no=0; transaction_no<transaction_count; transaction_no++) {
 				iowrite32(*source32, dest32);
+				if (debug) {
+					dev_info(&node_data->pdev->dev, "%s: 0x%08x written for %s\n",
+						__func__, *source32, node_data->nodename);
+				}
 				source32++;
 				dest32++;
 			}
@@ -381,6 +389,10 @@ static ssize_t fo_write (struct file *file, const char *buf, size_t count, loff_
 			/*udelay(100); give the dsp 100 uS for initialzing serial and dma */
 			for (transaction_no=0; transaction_no<transaction_count; transaction_no++) {
 				iowrite32(*source32++, dest32);
+				if (debug) {
+					dev_info(&node_data->pdev->dev, "%s: 0x%08x written for %s\n",
+						__func__, *source32, node_data->nodename);
+				}
 				source32++;
 			}
 			break;

@@ -58,6 +58,7 @@ static volatile unsigned long global_flags = 0;
 struct boot_data {
 	int gpio_done;
 	int gpio_reset;
+	unsigned int bytes_per_transaction;
 };
 
 struct reg_data {
@@ -323,8 +324,8 @@ static ssize_t fo_read (struct file *file, char *buf, size_t count, loff_t *offs
 static ssize_t fo_write (struct file *file, const char *buf, size_t count, loff_t *offset)
 {
 	void *kbuff;
-	u8 *source8, *dest8;
-	u32 *source32, *dest32;
+	u8 *source8;
+	u32 *dest32, *source32;
 	size_t transaction_no, transaction_count;
 	struct zfpga_node_data *node_data = file->private_data;
 
@@ -347,19 +348,44 @@ static ssize_t fo_write (struct file *file, const char *buf, size_t count, loff_
 	}
 	switch (node_data->nodetype) {
 		case NODE_TYPE_BOOT:
-			/* boot-device writes data bytewise to single fixed address - later
-			 * fpga versions accept 16bitwise data but ot be compatible we
-			 * transfer bytewise */
+			/* Boot-device data is written to a single address. Transaction data
+			 * width is set in devicetree to support old fpgas allowing 8bit
+			 * transfers only, versions available while writing this supporting
+			 * 16bit and there might be versions supporting 32bit in the future
+			 */
 			source8 = kbuff;
-			dest8 = node_data->base;
-			transaction_count = count;
+			dest32 = node_data->base;
+			transaction_count = count / node_data->node_specifc_data.boot.bytes_per_transaction;
 			for(transaction_no=0; transaction_no<transaction_count; transaction_no++) {
-				if (debug) {
-					dev_info(&node_data->pdev->dev, "%s: 0x%02x written for %s\n",
-						__func__, *source8, node_data->nodename);
+				switch(node_data->node_specifc_data.boot.bytes_per_transaction) {
+					case 1:
+						iowrite8(*source8, dest32);
+						if (debug) {
+							dev_info(&node_data->pdev->dev,
+								"%s: 0x%02x written for %s\n",
+								__func__, *source8, node_data->nodename);
+						}
+						source8++;
+						break;
+					case 2:
+						iowrite16(*((u16*)source8), dest32);
+						if (debug) {
+							dev_info(&node_data->pdev->dev,
+								"%s: 0x%04x written for %s\n",
+								__func__, *((u16*)source8), node_data->nodename);
+						}
+						source8+=2;
+						break;
+					case 4:
+						iowrite32(*((u32*)source8), dest32);
+						if (debug) {
+							dev_info(&node_data->pdev->dev,
+								"%s: 0x%08x written for %s\n",
+								__func__, *((u32*)source8), node_data->nodename);
+						}
+						source8+=4;
+						break;
 				}
-				iowrite8(*source8, dest8);
-				source8++;
 			}
 			break;
 		case NODE_TYPE_REG:
@@ -935,7 +961,7 @@ static int check_dt_settings(struct platform_device *pdev, struct zfpga_dev_data
 {
 	struct resource res;
 	u32 nodetype;
-	unsigned int irq;
+	unsigned int irq, bytes_per_transaction;
 	irq_handler_t irqhandler;
 	struct zfpga_node_data *curr_node_data;
 	int ret = 0;
@@ -1045,6 +1071,26 @@ static int check_dt_settings(struct platform_device *pdev, struct zfpga_dev_data
 					&curr_node_data->node_specifc_data.boot.gpio_done);
 				if(ret) {
 					goto exit;
+				}
+				/* default to bytewise boot data write */
+				bytes_per_transaction = 1;
+				if(of_property_read_u32(child_node_dt, "bytes-per-transaction", 
+					&bytes_per_transaction) == 0) {
+					if (bytes_per_transaction != 1 &&
+						bytes_per_transaction != 2 &&
+						bytes_per_transaction != 4) {
+						dev_info(&pdev->dev, "invalid bytes-per-transaction=%u for %s allowed values are 1,2,4 - defaulting to 1\n",
+							bytes_per_transaction,
+							curr_node_data->nodename);
+						bytes_per_transaction = 1;
+					}
+				}
+				curr_node_data->node_specifc_data.boot.bytes_per_transaction =
+					bytes_per_transaction;
+				if (debug) {
+					dev_info(&pdev->dev, "bytes-per-transaction=%u for %s\n",
+						bytes_per_transaction,
+						curr_node_data->nodename);
 				}
 				break;
 			case NODE_TYPE_REG:

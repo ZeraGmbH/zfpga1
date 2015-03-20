@@ -23,8 +23,13 @@
 
 #include "zfpga1.h"
 
-/* module parameter keeper */
-static bool debug = 0;
+/* module parameter keeper:
+ * = 0: no messages
+ * >= 1: messages for all init/exit stuff
+ * >= 2: + interrupt messages
+ * >= 3: + data messages for read/write
+ */
+static int debug = 0;
 
 /* class for registering char devs */
 static struct class *zfpga_class;
@@ -291,6 +296,11 @@ static ssize_t fo_read (struct file *file, char *buf, size_t count, loff_t *offs
 			transaction_count = count>>2;
 			for (transaction_no=0; transaction_no<transaction_count; transaction_no++) {
 				*dest32 = ioread32(source32);
+				if (debug > 2) {
+					dev_info(&node_data->pdev->dev,
+						"%s: 0x%04x read for %s\n",
+						__func__, *dest32, node_data->nodename);
+				}
 				source32++;
 				dest32++;
 			}
@@ -307,6 +317,11 @@ static ssize_t fo_read (struct file *file, char *buf, size_t count, loff_t *offs
 			/*udelay(100); give the dsp 100 uS for initialzing serial and dma */
 			for (transaction_no=0; transaction_no<transaction_count; transaction_no++) {
 				*dest32 = ioread32(source32);
+				if (debug > 2) {
+					dev_info(&node_data->pdev->dev,
+						"%s: 0x%04x read for %s\n",
+						__func__, *dest32, node_data->nodename);
+				}
 				dest32++;
 			}
 			break;
@@ -360,7 +375,7 @@ static ssize_t fo_write (struct file *file, const char *buf, size_t count, loff_
 				switch(node_data->node_specifc_data.boot.bytes_per_transaction) {
 					case 1:
 						iowrite8(*source8, dest32);
-						if (debug) {
+						if (debug > 2) {
 							dev_info(&node_data->pdev->dev,
 								"%s: 0x%02x written for %s\n",
 								__func__, *source8, node_data->nodename);
@@ -369,7 +384,7 @@ static ssize_t fo_write (struct file *file, const char *buf, size_t count, loff_
 						break;
 					case 2:
 						iowrite16(*((u16*)source8), dest32);
-						if (debug) {
+						if (debug > 2) {
 							dev_info(&node_data->pdev->dev,
 								"%s: 0x%04x written for %s\n",
 								__func__, *((u16*)source8), node_data->nodename);
@@ -378,7 +393,7 @@ static ssize_t fo_write (struct file *file, const char *buf, size_t count, loff_
 						break;
 					case 4:
 						iowrite32(*((u32*)source8), dest32);
-						if (debug) {
+						if (debug > 2) {
 							dev_info(&node_data->pdev->dev,
 								"%s: 0x%08x written for %s\n",
 								__func__, *((u32*)source8), node_data->nodename);
@@ -395,7 +410,7 @@ static ssize_t fo_write (struct file *file, const char *buf, size_t count, loff_
 			transaction_count = count>>2;
 			for (transaction_no=0; transaction_no<transaction_count; transaction_no++) {
 				iowrite32(*source32, dest32);
-				if (debug) {
+				if (debug > 2) {
 					dev_info(&node_data->pdev->dev, "%s: 0x%08x written for %s\n",
 						__func__, *source32, node_data->nodename);
 				}
@@ -415,7 +430,7 @@ static ssize_t fo_write (struct file *file, const char *buf, size_t count, loff_
 			/*udelay(100); give the dsp 100 uS for initialzing serial and dma */
 			for (transaction_no=0; transaction_no<transaction_count; transaction_no++) {
 				iowrite32(*source32++, dest32);
-				if (debug) {
+				if (debug > 2) {
 					dev_info(&node_data->pdev->dev, "%s: 0x%08x written for %s\n",
 						__func__, *source32, node_data->nodename);
 				}
@@ -871,7 +886,7 @@ static irqreturn_t boot_isr (int irq_nr, void *dev_id)
 	struct zfpga_node_data *znode = dev_id;
 	irqreturn_t ret = IRQ_NONE;
 
-	if (debug) {
+	if (debug > 1) {
 		pr_info("%s entered int %u for %s!\n",
 			__func__, irq_nr, znode->nodename);
 	}
@@ -896,7 +911,7 @@ static irqreturn_t reg_isr(int irq_nr, void *dev_id)
 	struct zfpga_node_data *znode = dev_id;
 	irqreturn_t ret = IRQ_NONE;
 
-	if (debug) {
+	if (debug > 1) {
 		pr_info("%s entered int %u for %s!\n",
 			__func__, irq_nr, znode->nodename);
 	}
@@ -917,7 +932,7 @@ static irqreturn_t dsp_isr(int irq_nr, void *dev_id)
 	void* adr = znode->base + FPGA_ADDR_DSP_STAT;
 	irqreturn_t ret = IRQ_NONE;
 
-	if (debug) {
+	if (debug > 1) {
 		pr_info("%s entered int %u for %s\n", __func__, irq_nr, znode->nodename);
 	}
 	if (znode->nodetype == NODE_TYPE_DSP) {
@@ -1253,6 +1268,6 @@ MODULE_AUTHOR("Andreas Mueller (a.mueller@zera.de)");
 MODULE_LICENSE("GPL");
 MODULE_SUPPORTED_DEVICE("ZERA zFPGA1");
 
-module_param(debug, bool, S_IRUGO|S_IWUSR);
+module_param(debug, int, S_IRUGO|S_IWUSR);
 module_init(zfpga_init);
 module_exit(zfpga_exit);

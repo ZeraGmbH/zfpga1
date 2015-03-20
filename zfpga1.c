@@ -94,8 +94,11 @@ struct zfpga_node_data {
 };
 
 /* per node flags */
-#define FLAG_OPEN        (1<<0)	/* avoid file opened  more than once */
-#define FLAG_DSP_RUNNING (1<<1)	/* keep track of dsp running state */
+#define FLAG_INT_HAND_ON (1<<0) /* to avoid unwanted interrupt firing for
+                                   dsp/reg these are interrupts are enabled on
+                                   first device open */
+#define FLAG_OPEN        (1<<1) /* avoid file opened  more than once */
+#define FLAG_DSP_RUNNING (1<<2) /* keep track of dsp running state */
 
 /* device data
  * Note: each devicetree node compatible to "zera,zfpga-1" creates a device
@@ -172,17 +175,17 @@ enum dsp_boot_block_tagg {
 
 /* ---------------------- common fops helper ---------------------- */
 static void* fops_check_and_alloc_kmem(
-	const struct zfpga_node_data *node_data,
+	const struct zfpga_node_data *znode,
 	size_t count, loff_t *offset)
 {
 	size_t len32;
 	int ret;
 
-	switch (node_data->nodetype) {
+	switch (znode->nodetype) {
 		case NODE_TYPE_BOOT: /* Not booting twice incidentally */
 			if (test_bit(FLAG_GLOBAL_FPGA_CONFIGURED, &global_flags)) {
-				dev_info(&node_data->pdev->dev, "%s failed (fpga already configured) for %s!\n",
-					__func__, node_data->nodename);
+				dev_info(&znode->pdev->dev, "%s failed (fpga already configured) for %s!\n",
+					__func__, znode->nodename);
 				return ERR_PTR(-ENODEV);
 			}
 			break;
@@ -190,10 +193,10 @@ static void* fops_check_and_alloc_kmem(
 			/* Note: fpga is memory mapped 1:1. Therefore limits are taken from
 			 * devicetree settings */
 			if ( (*offset < 0) || /* is that possible ?? */
-					((*offset + count) > node_data->size) ||
+					((*offset + count) > znode->size) ||
 					(count & 3)) {
-				dev_info(&node_data->pdev->dev, "%s failed (fpga address out of limits) for %s!\n",
-					__func__, node_data->nodename);
+				dev_info(&znode->pdev->dev, "%s failed (fpga address out of limits) for %s!\n",
+					__func__, znode->nodename);
 				return ERR_PTR(-EFAULT); /* bad adress */
 			}
 			break;
@@ -203,7 +206,7 @@ static void* fops_check_and_alloc_kmem(
 			/* Note: dsp is NOT memory mapped 1:1. An offset in our device node
 			 * is transferred to dsp by fpga. Therefore memory limits depend on
 			 * dsp type connected */
-			if ( node_data->node_specifc_data.dsp.dsp_magic_id == ADSP_21262_1_MAGIC) {
+			if ( znode->node_specifc_data.dsp.dsp_magic_id == ADSP_21262_1_MAGIC) {
 				if ( (*offset < ADSP_DATA_MEM_BASE_21262) ||
 						((*offset + len32) > ADSP_DATA_MEM_TOP_21262) ||
 						(count & 3)) {
@@ -218,8 +221,8 @@ static void* fops_check_and_alloc_kmem(
 				}
 			}
 			if(ret) {
-				dev_info(&node_data->pdev->dev, "%s failed (dsp address out of limits) for %s!\n",
-					__func__, node_data->nodename);
+				dev_info(&znode->pdev->dev, "%s failed (dsp address out of limits) for %s!\n",
+					__func__, znode->nodename);
 				return ERR_PTR(ret);
 			}
 			break;
@@ -227,634 +230,8 @@ static void* fops_check_and_alloc_kmem(
 	return kmalloc(count, GFP_KERNEL);
 }
 
-/* ---------------------- common fops ---------------------- */
-static int fo_open(struct inode *inode, struct file *file)
-{
-	struct zfpga_node_data *node_data =
-		container_of(inode->i_cdev, struct zfpga_node_data, cdev);
-	if (debug) {
-		dev_info(&node_data->pdev->dev, "%s for %s entered\n",
-			__func__, node_data->nodename);
-	}
-	/* device file must not be opened more than once */
-	if (test_bit(FLAG_OPEN, &node_data->flags)) {
-		dev_info(&node_data->pdev->dev, "%s already opened!\n", node_data->nodename);
-		return -EBUSY;
-	}
-	else {
-		set_bit(FLAG_OPEN, &node_data->flags);
-	}
-	/* reg and dsp devices require a configured FPGA */
-	if(node_data->nodetype == NODE_TYPE_REG ||
-		node_data->nodetype == NODE_TYPE_DSP) {
-		if (!test_bit(FLAG_GLOBAL_FPGA_CONFIGURED, &global_flags)) {
-			dev_info(&node_data->pdev->dev, "opening %s requires configured FPGA!\n",
-				node_data->nodename);
-			return -ENODEV;
-		}
-	}
-	/* dsp devices need identification to determine memory limits */
-	if(node_data->nodetype == NODE_TYPE_DSP) {
-		node_data->node_specifc_data.dsp.dsp_magic_id = 
-			ioread32(node_data->base + FPGA_ADDR_DSP_MAGICID);
-		if (node_data->node_specifc_data.dsp.dsp_magic_id != ADSP_21262_1_MAGIC &&
-			node_data->node_specifc_data.dsp.dsp_magic_id != ADSP_21362_1_MAGIC) {
-			dev_info(&node_data->pdev->dev, "unknown dsp magic id 0x%08X read for %s!\n",
-				node_data->node_specifc_data.dsp.dsp_magic_id, node_data->nodename);
-			return -ENODEV;
-		}
-	}
-	file->private_data = node_data;
-	if (debug) {
-		dev_info(&node_data->pdev->dev, "device %s opened\n", node_data->nodename);
-	}
-	return 0;
-}
-
-static ssize_t fo_read (struct file *file, char *buf, size_t count, loff_t *offset)
-{
-	void* kbuff;
-	u32 *source32, *dest32;
-	size_t transaction_no, transaction_count;
-	struct zfpga_node_data *node_data = file->private_data;
-
-	if (debug) {
-		dev_info(&node_data->pdev->dev, "%s offset: 0x%llx, length: 0x%zx for %s\n",
-			__func__, *offset, count, node_data->nodename);
-	}
-	kbuff = fops_check_and_alloc_kmem(node_data, count, offset);
-	if (IS_ERR(kbuff)) {
-		dev_info(&node_data->pdev->dev, "%s failed to alloc kmem for %s (%li)!\n",
-			__func__, node_data->nodename, PTR_ERR(kbuff));
-		return PTR_ERR(kbuff);
-	}
-	switch (node_data->nodetype) {
-		case NODE_TYPE_REG:
-			/* reg-device reads data 32bitwise mapped 1:1 */
-			source32 = node_data->base + *offset;
-			dest32 = kbuff;
-			transaction_count = count>>2;
-			for (transaction_no=0; transaction_no<transaction_count; transaction_no++) {
-				*dest32 = ioread32(source32);
-				if (debug > 2) {
-					dev_info(&node_data->pdev->dev,
-						"%s: 0x%04x read for %s\n",
-						__func__, *dest32, node_data->nodename);
-				}
-				source32++;
-				dest32++;
-			}
-			break;
-		case NODE_TYPE_DSP:
-			/* dsp-device reads data 32bitwise from single fixed address in fpga */
-			source32 = node_data->base + FPGA_ADDR_DSP_SERIAL;
-			dest32 = kbuff;
-			transaction_count = count>>2;
-			/* serial interface and dma initialization */
-			iowrite32(DSP_CMD_READ, node_data->base + FPGA_ADDR_DSP_SPI);
-			iowrite32(*offset, node_data->base + FPGA_ADDR_DSP_SPI);
-			iowrite32(transaction_count, node_data->base + FPGA_ADDR_DSP_SPI);
-			/*udelay(100); give the dsp 100 uS for initialzing serial and dma */
-			for (transaction_no=0; transaction_no<transaction_count; transaction_no++) {
-				*dest32 = ioread32(source32);
-				if (debug > 2) {
-					dev_info(&node_data->pdev->dev,
-						"%s: 0x%04x read for %s\n",
-						__func__, *dest32, node_data->nodename);
-				}
-				dest32++;
-			}
-			break;
-	}
-	if (copy_to_user(buf, kbuff, count)) {
-		dev_info(&node_data->pdev->dev, "%s copy_to_user failed for %s\n",
-			__func__, node_data->nodename);
-		kfree(kbuff);
-		return -EFAULT;
-	}
-	kfree(kbuff);
-	return count;
-}
-
-static ssize_t fo_write (struct file *file, const char *buf, size_t count, loff_t *offset)
-{
-	void *kbuff;
-	u8 *source8;
-	u32 *dest32, *source32;
-	size_t transaction_no, transaction_count;
-	struct zfpga_node_data *node_data = file->private_data;
-
-	if (debug) {
-		dev_info(&node_data->pdev->dev, "%s offset: 0x%llx, length: 0x%zx for %s\n",
-			__func__, *offset, count, node_data->nodename);
-	}
-	kbuff = fops_check_and_alloc_kmem(node_data, count, offset);
-	if (IS_ERR(kbuff)) {
-		dev_info(&node_data->pdev->dev,	"%s failed to check/alloc kmem for %s (%li)!\n",
-			__func__, node_data->nodename,
-			PTR_ERR(kbuff));
-		return PTR_ERR(kbuff);
-	}
-	if ( copy_from_user(kbuff, buf, count)) {
-		dev_info(&node_data->pdev->dev,	"%s copy_from_user failed for %s\n",
-			__func__, node_data->nodename);
-		kfree(kbuff);
-		return -EFAULT;
-	}
-	switch (node_data->nodetype) {
-		case NODE_TYPE_BOOT:
-			/* Boot-device data is written to a single address. Transaction data
-			 * width is set in devicetree to support old fpgas allowing 8bit
-			 * transfers only, versions available while writing this supporting
-			 * 16bit and there might be versions supporting 32bit in the future
-			 */
-			source8 = kbuff;
-			dest32 = node_data->base;
-			transaction_count = count / node_data->node_specifc_data.boot.bytes_per_transaction;
-			for(transaction_no=0; transaction_no<transaction_count; transaction_no++) {
-				switch(node_data->node_specifc_data.boot.bytes_per_transaction) {
-					case 1:
-						iowrite8(*source8, dest32);
-						if (debug > 2) {
-							dev_info(&node_data->pdev->dev,
-								"%s: 0x%02x written for %s\n",
-								__func__, *source8, node_data->nodename);
-						}
-						source8++;
-						break;
-					case 2:
-						iowrite16(*((u16*)source8), dest32);
-						if (debug > 2) {
-							dev_info(&node_data->pdev->dev,
-								"%s: 0x%04x written for %s\n",
-								__func__, *((u16*)source8), node_data->nodename);
-						}
-						source8+=2;
-						break;
-					case 4:
-						iowrite32(*((u32*)source8), dest32);
-						if (debug > 2) {
-							dev_info(&node_data->pdev->dev,
-								"%s: 0x%08x written for %s\n",
-								__func__, *((u32*)source8), node_data->nodename);
-						}
-						source8+=4;
-						break;
-				}
-			}
-			break;
-		case NODE_TYPE_REG:
-			/* reg-device writes data 32bitwise mapped 1:1 */
-			source32 = kbuff;
-			dest32 = node_data->base + *offset;
-			transaction_count = count>>2;
-			for (transaction_no=0; transaction_no<transaction_count; transaction_no++) {
-				iowrite32(*source32, dest32);
-				if (debug > 2) {
-					dev_info(&node_data->pdev->dev, "%s: 0x%08x written for %s\n",
-						__func__, *source32, node_data->nodename);
-				}
-				source32++;
-				dest32++;
-			}
-			break;
-		case NODE_TYPE_DSP:
-			/* dsp-device writes data 32bitwise to single fixed address in fpga */
-			source32 = kbuff;
-			dest32 = node_data->base + FPGA_ADDR_DSP_SERIAL;
-			transaction_count = count>>2;
-			/* serial interface and dma initialization */
-			iowrite32(DSP_CMD_WRITE, node_data->base + FPGA_ADDR_DSP_SPI);
-			iowrite32(*offset, node_data->base + FPGA_ADDR_DSP_SPI);
-			iowrite32(transaction_count, node_data->base + FPGA_ADDR_DSP_SPI);
-			/*udelay(100); give the dsp 100 uS for initialzing serial and dma */
-			for (transaction_no=0; transaction_no<transaction_count; transaction_no++) {
-				iowrite32(*source32++, dest32);
-				if (debug > 2) {
-					dev_info(&node_data->pdev->dev, "%s: 0x%08x written for %s\n",
-						__func__, *source32, node_data->nodename);
-				}
-				source32++;
-			}
-			break;
-	}
-	kfree(kbuff);
-	if (debug) {
-		dev_info(&node_data->pdev->dev, "%s 0x%lx bytes written for %s\n",
-			__func__, (unsigned long)(count), node_data->nodename);
-	}
-	return count;
-}
-
-static loff_t fo_lseek(struct file *file, loff_t offset, int origin)
-{
-	struct zfpga_node_data *node_data = file->private_data;
-	if (debug) {
-		dev_info(&node_data->pdev->dev, "%s adress 0x%llx for %s\n",
-			__func__, offset, node_data->nodename);
-	}
-	file->f_pos = offset; /* only absolut positioning */
-	return offset;
-}
-
-static int fo_fasync(int fd, struct file *file, int mode)
-{
-	struct zfpga_node_data *node_data = file->private_data;
-	struct fasync_struct** async_callback = NULL;
-	if (debug) {
-		dev_info(&node_data->pdev->dev, "%s entered for %s\n",
-			__func__, node_data->nodename);
-	}
-	switch (node_data->nodetype)
-	{
-		case NODE_TYPE_REG:
-			async_callback = &node_data->node_specifc_data.reg.aqueue;
-			break;
-		case NODE_TYPE_DSP:
-			async_callback = &node_data->node_specifc_data.dsp.aqueue;
-			break;
-	}
-	if(async_callback) {
-		return (fasync_helper(fd, file, mode, async_callback));
-	}
-	else {
-		return -EFAULT;
-	}
-}
-
-static int fo_release(struct inode *inode, struct file *file)
-{
-	struct zfpga_node_data *node_data = file->private_data;
-	if (debug) {
-		dev_info(&node_data->pdev->dev, "%s for %s entered\n",
-			__func__, node_data->nodename);
-	}
-	fo_fasync(-1, file, 0); /* see ldd3 chapter 6.4 */
-	clear_bit(FLAG_OPEN, &node_data->flags);
-	file->private_data = NULL;
-	if (debug) {
-		dev_info(&node_data->pdev->dev, "device %s closed\n", node_data->nodename);
-	}
-	return 0;
-}
-
-/* ---------------------- ioctl helper methods ---------------------- */
-int fpga_reset(const struct zfpga_node_data *node_data)
-{
-	if (debug) {
-		dev_info(&node_data->pdev->dev, "%s entered for %s\n",
-			__func__, node_data->nodename);
-	}
-	if (node_data->nodetype == NODE_TYPE_BOOT) {
-		gpio_set_value(node_data->node_specifc_data.boot.gpio_reset, 1);
-		udelay(10);
-		gpio_set_value(node_data->node_specifc_data.boot.gpio_reset, 1);
-		/* resetting causes unconfigured state */
-		clear_bit(FLAG_GLOBAL_FPGA_CONFIGURED, &global_flags);
-		return 0;
-	}
-	dev_info(&node_data->pdev->dev, "%s was called for %s which is not a boot node!\n",
-		__func__, node_data->nodename);
-	return -EFAULT;
-}
-
-static int dsp_reset(struct zfpga_node_data *node_data)
-{
-	void* adr = node_data->base + FPGA_ADDR_DSP_CTRL;
-	if (debug) {
-		dev_info(&node_data->pdev->dev, "%s entered for %s\n",
-			__func__, node_data->nodename);
-	}
-	iowrite32(ioread32(adr) | FPGA_DSP_CTRL_BIT_RESET, adr);
-	udelay(400); /* dsp requires 4096 CLKIN (25MHz) cycles after deasserting reset */
-	clear_bit(FLAG_DSP_RUNNING, &node_data->flags);
-	return 0;
-}
-
-static unsigned long dsp_get_boot_block_len(struct dsp_bootheader *h)
-{
-	unsigned long nr = h->count;
-	switch (h->tag) {
-		case DSP_BOOT_BLOCK_FINALINIT:	return 0x600; /* fix length */
-		case DSP_BOOT_BLOCK_ZERO_LDATA:	return 0;
-		case DSP_BOOT_BLOCK_ZERO_L48:	return 0;
-		case DSP_BOOT_BLOCK_INIT_L16:	return (nr << 1);
-		case DSP_BOOT_BLOCK_INIT_L32:	return (nr << 2);
-		case DSP_BOOT_BLOCK_INIT_L48:	return (((nr + 1) & 0xFFFFFFFE) * 6);
-		case DSP_BOOT_BLOCK_INIT_L64:	return (nr << 3);
-		case DSP_BOOT_BLOCK_ZERO_EXT8:	return 0;
-		case DSP_BOOT_BLOCK_ZERO_EXT16:	return 0;
-	}
-	return nr;
-}
-
-/* ioctl's arg for dsp booting contains dsp's boot file. This is organized
- * as sequence of blocks of different types see 
- * "VisualDSP++ / Loader and Utilities Manual" for more details */
-static int dsp_boot(struct zfpga_node_data *node_data, unsigned long arg)
-{
-	unsigned long blocklen, transaction_no;
-	u32 *data;
-	void *kmem;
-	struct dsp_bootheader act_bootheader;
-	char *user_data = (char*) arg;
-
-	dsp_reset(node_data);
-	/* first data block to load is the dsp´s bootstrap loader
-	 * this block has no header */
-	act_bootheader.tag = DSP_BOOT_BLOCK_INIT_L48;
-	act_bootheader.count = 0x100; /* with fix length */
-	act_bootheader.address = 0x40000; /* and fix adress */
-	if (debug) {
-		dev_info(&node_data->pdev->dev, "%s entering boot loop for %s\n",
-			__func__, node_data->nodename);
-	}
-	for (;;) {
-		if (act_bootheader.tag >= DSP_BOOT_BLOCK_COUNT) {
-			dev_info(&node_data->pdev->dev, "%s invalid tag %u found for %s!\n",
-				__func__, act_bootheader.tag, node_data->nodename);
-			return -EFAULT;
-		}
-		blocklen = dsp_get_boot_block_len(&act_bootheader);
-		if (debug) {
-			dev_info(&node_data->pdev->dev, "%s boot block: type %u length %lu start 0x%x\n",
-				__func__, act_bootheader.tag, blocklen, act_bootheader.address);
-		}
-		/* is there data for current block header to send ? */
-		if (blocklen > 0) {
-			kmem = kmalloc(blocklen,GFP_KERNEL);
-			if (kmem == NULL) {
-				dev_info(&node_data->pdev->dev, "%s memory allocation for boot block data failed for %s\n",
-					__func__, node_data->nodename);
-				return -ENOMEM;
-			}
-			if (copy_from_user(kmem, user_data, blocklen)) {
-				dev_info(&node_data->pdev->dev, "%s copy_from_user for boot block data failed for %s\n",
-					__func__, node_data->nodename);
-				kfree(kmem);
-				return -EFAULT;
-			}
-			user_data += blocklen;
-			/* write all the data of the desired block to the FPGA_ADDR_DSP_SPI */
-			data = kmem;
-			for (transaction_no=0; transaction_no<(blocklen>>2); transaction_no++,data++)
-				iowrite32(*data, node_data->base + FPGA_ADDR_DSP_SPI);
-			kfree(kmem);
-			/* for each boot block wait at least 10 mS */
-			msleep(10);
-		}
-		if (debug) {
-			dev_info(&node_data->pdev->dev, "%s boot datablock type %u done for %s\n",
-				__func__, act_bootheader.tag, node_data->nodename);
-		}
-		if (act_bootheader.tag == DSP_BOOT_BLOCK_FINALINIT) {
-			break; /* we have finished */
-		}
-		/* read next boot header */
-		if (copy_from_user(&act_bootheader, user_data, sizeof(act_bootheader))) {
-			dev_info(&node_data->pdev->dev, "%s copy_from_user for boot block header failed for %s\n",
-				__func__, node_data->nodename);
-			return -EFAULT;
-		}
-		user_data += sizeof(act_bootheader);
-		/* send boot header */
-		iowrite32(act_bootheader.tag, node_data->base + FPGA_ADDR_DSP_SPI);
-		iowrite32(act_bootheader.count, node_data->base + FPGA_ADDR_DSP_SPI);
-		iowrite32(act_bootheader.address, node_data->base + FPGA_ADDR_DSP_SPI);
-		/* in case of ZeroX tag Headers there must be a delay of 2mS + act_bootheader.count * 100nS */
-		switch (act_bootheader.tag) {
-			case DSP_BOOT_BLOCK_FINALINIT: break;
-			case DSP_BOOT_BLOCK_INIT_L16: break;
-			case DSP_BOOT_BLOCK_INIT_L32: break;
-			case DSP_BOOT_BLOCK_INIT_L48: break;
-			case  DSP_BOOT_BLOCK_INIT_L64: break;
-			default: msleep(20); /* should be 2ms + count*100nS, count is max 1.5*2^16 */
-		}
-	}
-	if (debug) {
-		dev_info(&node_data->pdev->dev, "%s booting successful for %s\n",
-			__func__, node_data->nodename);
-	}
-	set_bit(FLAG_DSP_RUNNING, &node_data->flags);
-	return 0;
-}
-
-static int dsp_int_generate(const struct zfpga_node_data *node_data)
-{
-	void* adr = node_data->base + FPGA_ADDR_DSP_CTRL;
-	if (debug) {
-		dev_info(&node_data->pdev->dev, "%s entered for %s\n",
-			__func__, node_data->nodename);
-	}
-	iowrite32(ioread32(adr) | FPGA_DSP_CTRL_BIT_IRQ2, adr);
-	return 0;
-}
-
-static int dsp_int_enable(const struct zfpga_node_data *node_data)
-{
-	void* adr = node_data->base + FPGA_ADDR_DSP_CFG;
-	if (debug) {
-		dev_info(&node_data->pdev->dev, "%s entered for %s\n",
-			__func__, node_data->nodename);
-	}
-	iowrite32(ioread32(adr) | FPGA_DSP_CFG_BIT_IRQ_ENABLE, adr);
-	return 0;
-}
-
-static int dsp_int_disable(const struct zfpga_node_data *node_data)
-{
-	void* adr = node_data->base + FPGA_ADDR_DSP_CFG;
-	if (debug) {
-		dev_info(&node_data->pdev->dev, "%s entered for %s\n",
-			__func__, node_data->nodename);
-	}
-	iowrite32(ioread32(adr) & (~FPGA_DSP_CFG_BIT_IRQ_ENABLE), adr);
-	return 0;
-}
-
-static int dsp_read_io(const struct zfpga_node_data *node_data, unsigned long arg)
-{	// reads the register[num] with num in arg
-	void* adr = node_data->base + (arg << 2);
-	if (debug) {
-		dev_info(&node_data->pdev->dev, "%s entered for %s\n",
-			__func__, node_data->nodename);
-	}
-	return ioread32(adr);
-}
-
-/* ---------------------- ioctls ---------------------- */
-static long fo_ioctl_boot (struct file *file, unsigned int cmd, unsigned long arg)
-{
-	struct zfpga_node_data *node_data = file->private_data;
-	if (debug) {
-		dev_info(&node_data->pdev->dev, "%s entered for %s, cmd: 0x%x, arg: %lx\n",
-			__func__, node_data->nodename, cmd, arg);
-	}
-	switch (cmd) {
-		case FPGA_RESET: return(fpga_reset(node_data));
-		default:
-			dev_info(&node_data->pdev->dev, "%s cmd: 0x%x invalid for %s\n",
-				__func__, cmd, node_data->nodename);
-			return(-EINVAL);
-	}
-}
-
-long fo_ioctl_dsp(struct file *file, unsigned int cmd, unsigned long arg)
-{
-	struct zfpga_node_data *node_data = file->private_data;
-	if (debug) {
-		dev_info(&node_data->pdev->dev, "%s entered for %s cmd: 0x%x, arg: %lx\n",
-			__func__, node_data->nodename, cmd, arg);
-	}
-	switch (cmd) {
-		case DSP_RESET: return(dsp_reset(node_data));
-		case DSP_BOOT: return(dsp_boot(node_data, arg));
-		case DSP_INT_REQ: return(dsp_int_generate(node_data));
-		case DSP_INT_ENABLE: return(dsp_int_enable(node_data));
-		case DSP_INT_DISABLE: return(dsp_int_disable(node_data));
-		case IO_READ: return(dsp_read_io(node_data, arg));
-		default:
-			dev_info(&node_data->pdev->dev, "%s cmd: 0x%x invalid for %s\n",
-				__func__, cmd, node_data->nodename);
-			return(-EINVAL);
-	}
-}
-
-/* ---------------------- fops array ---------------------- */
-static const struct file_operations fops_arr[NODE_TYPE_COUNT] = {
-	[NODE_TYPE_BOOT] = {
-		.owner = THIS_MODULE,
-		.open = fo_open,
-		.release = fo_release,
-		.llseek = no_llseek,
-		.write = fo_write,
-		.compat_ioctl = fo_ioctl_boot
-	},
-	[NODE_TYPE_REG] = {
-		.owner = THIS_MODULE,
-		.open = fo_open,
-		.release = fo_release,
-		.llseek = fo_lseek,
-		.read = fo_read,
-		.write = fo_write,
-		.fasync = fo_fasync
-	},
-	[NODE_TYPE_DSP] = {
-		.owner = THIS_MODULE,
-		.open = fo_open,
-		.release = fo_release,
-		.llseek = fo_lseek,
-		.read = fo_read,
-		.write = fo_write,
-		.unlocked_ioctl = fo_ioctl_dsp,
-		.fasync = fo_fasync,
-	},
-};
-
-/* ---------------------- create char devices ---------------------- */
-static int create_char_devices(struct platform_device *pdev, struct zfpga_dev_data *zfpga)
-{
-	unsigned int node_added_count;
-	unsigned int inode;
-	int ret = 0;
-
-	if (zfpga->count_nodes) {
-		if ((ret = alloc_chrdev_region (
-					&zfpga->first_char_node,
-					0,
-					zfpga->count_nodes,
-					FPGADEV_NAME))) {
-			dev_info(&pdev->dev, "can't alloc chardev region for %s\n",
-				pdev->dev.of_node->full_name);
-			goto exit;
-		}
-		if (debug) {
-			dev_info(&pdev->dev, "chardev region created for %s\n",
-				pdev->dev.of_node->full_name);
-		}
-		for (node_added_count=0; node_added_count<zfpga->count_nodes; node_added_count++) {
-			cdev_init(
-				&zfpga->nodes[node_added_count].cdev,
-				&fops_arr[zfpga->nodes[node_added_count].nodetype]);
-			zfpga->nodes[node_added_count].cdev.owner = THIS_MODULE;
-			if ((ret = cdev_add(
-							&zfpga->nodes[node_added_count].cdev,
-							zfpga->first_char_node+node_added_count, 1))) {
-				dev_info(&pdev->dev, "cdev_add failed for %s\n",
-					zfpga->nodes[node_added_count].nodename);
-				goto exit_cleanup_nodes;
-			}
-			if (debug) {
-				dev_info(&pdev->dev, "cdev_add succeeded for %s\n",
-					zfpga->nodes[node_added_count].nodename);
-			}
-		}
-		for (node_added_count=0; node_added_count<zfpga->count_nodes; node_added_count++) {
-			zfpga->nodes[node_added_count].device = device_create(
-				zfpga_class,
-				&pdev->dev,
-				zfpga->first_char_node+node_added_count,
-				NULL,
-				"%s",
-				zfpga->nodes[node_added_count].nodename);
-            if(IS_ERR(zfpga->nodes[node_added_count].device)) {
-				ret = PTR_ERR(zfpga->nodes[node_added_count].device);
-				dev_info(&pdev->dev, "device_create failed for %s\n",
-					zfpga->nodes[node_added_count].nodename);
-				goto exit_cleanup_devices;
-			}
-			if (debug) {
-				dev_info(&pdev->dev, "device_create succeded for %s\n",
-					zfpga->nodes[node_added_count].nodename);
-			}
-		}
-	}
-	return 0;
-
-exit_cleanup_devices:
-	for (inode=0; inode<node_added_count; inode++) {
-		if (debug) {
-			dev_info(&pdev->dev, "exit_cleanup_devices for %s\n",
-				zfpga->nodes[inode].nodename);
-		}
-		device_destroy(zfpga_class, zfpga->first_char_node+inode);
-		zfpga->nodes[inode].device = NULL;
-	}
-	/* all cdevs were created here */
-	node_added_count = zfpga->count_nodes;
-
-exit_cleanup_nodes:
-	for (inode=0; inode<node_added_count; inode++) {
-		if (debug) {
-			dev_info(&pdev->dev, "exit_cleanup_nodes for %s\n",
-				zfpga->nodes[inode].nodename);
-		}
-		cdev_del(&zfpga->nodes[inode].cdev);
-	}
-exit:
-	return ret;
-}
-
-/* ---------------------- free device's interrupt ---------------------- */
-void devm_free_interrupts(
-	struct platform_device *pdev, struct zfpga_dev_data *zfpga)
-{
-	unsigned int inode;
-
-	for (inode=0; inode<zfpga->count_nodes; inode++) {
-		if(zfpga->nodes[inode].irq) {
-			if (debug) {
-				dev_info(&pdev->dev, "free interrupt %u for %s\n",
-					zfpga->nodes[inode].irq, zfpga->nodes[inode].nodename);
-			}
-			free_irq(zfpga->nodes[inode].irq, &zfpga->nodes[inode]);
-			zfpga->nodes[inode].irq = 0;
-		}
-	}
-}
-
 /* ---------------------- gpio helper ---------------------- */
-static int create_gpio(struct zfpga_node_data *znode, struct device_node *dtnode,
+static int znode_create_gpio(struct zfpga_node_data *znode, struct device_node *dtnode,
 	unsigned long flags, const char *name, int *gpio_var)
 {
 	int gpio;
@@ -967,17 +344,690 @@ static irqreturn_t dsp_isr(int irq_nr, void *dev_id)
 	return ret;
 }
 
+/* ---------------------- request/free device's interrupt ---------------------- */
+int znode_request_interrupt(struct zfpga_node_data *znode)
+{
+	irq_handler_t irqhandler = NULL;
+	int ret = 0;
+
+	switch(znode->nodetype) {
+		case NODE_TYPE_BOOT:
+			irqhandler = boot_isr;
+			break;
+		case NODE_TYPE_REG:
+			/* to avoid unwanted fire: fpga must be booted */
+			if(test_bit(FLAG_GLOBAL_FPGA_CONFIGURED, &global_flags)) {
+				irqhandler = reg_isr;
+			}
+			break;
+		case NODE_TYPE_DSP:
+			/* to avoid unwanted fire: fpga must be booted */
+			if(test_bit(FLAG_GLOBAL_FPGA_CONFIGURED, &global_flags)) {
+				irqhandler = dsp_isr;
+			}
+			break;
+	}
+	if (znode->irq && irqhandler && !test_bit(FLAG_INT_HAND_ON, &znode->flags)) {
+		ret = request_irq(
+			znode->irq,
+			irqhandler,
+			IRQF_SHARED,
+			znode->nodename,
+			znode);
+		if (ret < 0) {
+			dev_info(&znode->pdev->dev, "failed to request interrupt for %s\n",
+				znode->nodename);
+			goto exit;
+		}
+		set_bit(FLAG_INT_HAND_ON, &znode->flags);
+		if (debug) {
+			dev_info(&znode->pdev->dev, "interrupt %u requested for %s\n",
+				znode->irq, znode->nodename);
+		}
+	}
+exit:
+	return ret;
+}
+
+void zdev_free_interrupts(
+	struct platform_device *pdev, struct zfpga_dev_data *zfpga)
+{
+	unsigned int inode;
+
+	for (inode=0; inode<zfpga->count_nodes; inode++) {
+		if(zfpga->nodes[inode].irq && 
+			test_bit(FLAG_INT_HAND_ON, &zfpga->nodes[inode].flags)) {
+			if (debug) {
+				dev_info(&pdev->dev, "free interrupt %u for %s\n",
+					zfpga->nodes[inode].irq, zfpga->nodes[inode].nodename);
+			}
+			free_irq(zfpga->nodes[inode].irq, &zfpga->nodes[inode]);
+			clear_bit(FLAG_INT_HAND_ON, &zfpga->nodes[inode].flags);
+		}
+	}
+}
+
+/* ---------------------- common fops ---------------------- */
+static int fo_open(struct inode *inode, struct file *file)
+{
+	struct zfpga_node_data *znode =
+		container_of(inode->i_cdev, struct zfpga_node_data, cdev);
+	if (debug) {
+		dev_info(&znode->pdev->dev, "%s for %s entered\n",
+			__func__, znode->nodename);
+	}
+	/* device file must not be opened more than once */
+	if (test_bit(FLAG_OPEN, &znode->flags)) {
+		dev_info(&znode->pdev->dev, "%s already opened!\n", znode->nodename);
+		return -EBUSY;
+	}
+	else {
+		set_bit(FLAG_OPEN, &znode->flags);
+	}
+	/* reg and dsp devices require a configured/booted FPGA */
+	if(znode->nodetype == NODE_TYPE_REG ||
+		znode->nodetype == NODE_TYPE_DSP) {
+		if (!test_bit(FLAG_GLOBAL_FPGA_CONFIGURED, &global_flags)) {
+			dev_info(&znode->pdev->dev, "opening %s requires configured FPGA!\n",
+				znode->nodename);
+			return -ENODEV;
+		}
+	}
+	/* dsp devices need identification to determine memory limits */
+	if(znode->nodetype == NODE_TYPE_DSP) {
+		znode->node_specifc_data.dsp.dsp_magic_id = 
+			ioread32(znode->base + FPGA_ADDR_DSP_MAGICID);
+		if (znode->node_specifc_data.dsp.dsp_magic_id != ADSP_21262_1_MAGIC &&
+			znode->node_specifc_data.dsp.dsp_magic_id != ADSP_21362_1_MAGIC) {
+			dev_info(&znode->pdev->dev, "unknown dsp magic id 0x%08X read for %s!\n",
+				znode->node_specifc_data.dsp.dsp_magic_id, znode->nodename);
+			return -ENODEV;
+		}
+	}
+	if(znode_request_interrupt(znode)) {
+		return -ENODEV;
+	}
+	file->private_data = znode;
+	if (debug) {
+		dev_info(&znode->pdev->dev, "device %s opened\n", znode->nodename);
+	}
+	return 0;
+}
+
+static ssize_t fo_read (struct file *file, char *buf, size_t count, loff_t *offset)
+{
+	void* kbuff;
+	u32 *source32, *dest32;
+	size_t transaction_no, transaction_count;
+	struct zfpga_node_data *znode = file->private_data;
+
+	if (debug) {
+		dev_info(&znode->pdev->dev, "%s offset: 0x%llx, length: 0x%zx for %s\n",
+			__func__, *offset, count, znode->nodename);
+	}
+	kbuff = fops_check_and_alloc_kmem(znode, count, offset);
+	if (IS_ERR(kbuff)) {
+		dev_info(&znode->pdev->dev, "%s failed to alloc kmem for %s (%li)!\n",
+			__func__, znode->nodename, PTR_ERR(kbuff));
+		return PTR_ERR(kbuff);
+	}
+	switch (znode->nodetype) {
+		case NODE_TYPE_REG:
+			/* reg-device reads data 32bitwise mapped 1:1 */
+			source32 = znode->base + *offset;
+			dest32 = kbuff;
+			transaction_count = count>>2;
+			for (transaction_no=0; transaction_no<transaction_count; transaction_no++) {
+				*dest32 = ioread32(source32);
+				if (debug > 2) {
+					dev_info(&znode->pdev->dev,
+						"%s: 0x%04x read for %s\n",
+						__func__, *dest32, znode->nodename);
+				}
+				source32++;
+				dest32++;
+			}
+			break;
+		case NODE_TYPE_DSP:
+			/* dsp-device reads data 32bitwise from single fixed address in fpga */
+			source32 = znode->base + FPGA_ADDR_DSP_SERIAL;
+			dest32 = kbuff;
+			transaction_count = count>>2;
+			/* serial interface and dma initialization */
+			iowrite32(DSP_CMD_READ, znode->base + FPGA_ADDR_DSP_SPI);
+			iowrite32(*offset, znode->base + FPGA_ADDR_DSP_SPI);
+			iowrite32(transaction_count, znode->base + FPGA_ADDR_DSP_SPI);
+			/*udelay(100); give the dsp 100 uS for initialzing serial and dma */
+			for (transaction_no=0; transaction_no<transaction_count; transaction_no++) {
+				*dest32 = ioread32(source32);
+				if (debug > 2) {
+					dev_info(&znode->pdev->dev,
+						"%s: 0x%04x read for %s\n",
+						__func__, *dest32, znode->nodename);
+				}
+				dest32++;
+			}
+			break;
+	}
+	if (copy_to_user(buf, kbuff, count)) {
+		dev_info(&znode->pdev->dev, "%s copy_to_user failed for %s\n",
+			__func__, znode->nodename);
+		kfree(kbuff);
+		return -EFAULT;
+	}
+	kfree(kbuff);
+	return count;
+}
+
+static ssize_t fo_write (struct file *file, const char *buf, size_t count, loff_t *offset)
+{
+	void *kbuff;
+	u8 *source8;
+	u32 *dest32, *source32;
+	size_t transaction_no, transaction_count;
+	struct zfpga_node_data *znode = file->private_data;
+
+	if (debug) {
+		dev_info(&znode->pdev->dev, "%s offset: 0x%llx, length: 0x%zx for %s\n",
+			__func__, *offset, count, znode->nodename);
+	}
+	kbuff = fops_check_and_alloc_kmem(znode, count, offset);
+	if (IS_ERR(kbuff)) {
+		dev_info(&znode->pdev->dev,	"%s failed to check/alloc kmem for %s (%li)!\n",
+			__func__, znode->nodename,
+			PTR_ERR(kbuff));
+		return PTR_ERR(kbuff);
+	}
+	if ( copy_from_user(kbuff, buf, count)) {
+		dev_info(&znode->pdev->dev,	"%s copy_from_user failed for %s\n",
+			__func__, znode->nodename);
+		kfree(kbuff);
+		return -EFAULT;
+	}
+	switch (znode->nodetype) {
+		case NODE_TYPE_BOOT:
+			/* Boot-device data is written to a single address. Transaction data
+			 * width is set in devicetree to support old fpgas allowing 8bit
+			 * transfers only, versions available while writing this supporting
+			 * 16bit and there might be versions supporting 32bit in the future
+			 */
+			source8 = kbuff;
+			dest32 = znode->base;
+			transaction_count = count / znode->node_specifc_data.boot.bytes_per_transaction;
+			for(transaction_no=0; transaction_no<transaction_count; transaction_no++) {
+				switch(znode->node_specifc_data.boot.bytes_per_transaction) {
+					case 1:
+						iowrite8(*source8, dest32);
+						if (debug > 2) {
+							dev_info(&znode->pdev->dev,
+								"%s: 0x%02x written for %s\n",
+								__func__, *source8, znode->nodename);
+						}
+						source8++;
+						break;
+					case 2:
+						iowrite16(*((u16*)source8), dest32);
+						if (debug > 2) {
+							dev_info(&znode->pdev->dev,
+								"%s: 0x%04x written for %s\n",
+								__func__, *((u16*)source8), znode->nodename);
+						}
+						source8+=2;
+						break;
+					case 4:
+						iowrite32(*((u32*)source8), dest32);
+						if (debug > 2) {
+							dev_info(&znode->pdev->dev,
+								"%s: 0x%08x written for %s\n",
+								__func__, *((u32*)source8), znode->nodename);
+						}
+						source8+=4;
+						break;
+				}
+			}
+			break;
+		case NODE_TYPE_REG:
+			/* reg-device writes data 32bitwise mapped 1:1 */
+			source32 = kbuff;
+			dest32 = znode->base + *offset;
+			transaction_count = count>>2;
+			for (transaction_no=0; transaction_no<transaction_count; transaction_no++) {
+				iowrite32(*source32, dest32);
+				if (debug > 2) {
+					dev_info(&znode->pdev->dev, "%s: 0x%08x written for %s\n",
+						__func__, *source32, znode->nodename);
+				}
+				source32++;
+				dest32++;
+			}
+			break;
+		case NODE_TYPE_DSP:
+			/* dsp-device writes data 32bitwise to single fixed address in fpga */
+			source32 = kbuff;
+			dest32 = znode->base + FPGA_ADDR_DSP_SERIAL;
+			transaction_count = count>>2;
+			/* serial interface and dma initialization */
+			iowrite32(DSP_CMD_WRITE, znode->base + FPGA_ADDR_DSP_SPI);
+			iowrite32(*offset, znode->base + FPGA_ADDR_DSP_SPI);
+			iowrite32(transaction_count, znode->base + FPGA_ADDR_DSP_SPI);
+			/*udelay(100); give the dsp 100 uS for initialzing serial and dma */
+			for (transaction_no=0; transaction_no<transaction_count; transaction_no++) {
+				iowrite32(*source32++, dest32);
+				if (debug > 2) {
+					dev_info(&znode->pdev->dev, "%s: 0x%08x written for %s\n",
+						__func__, *source32, znode->nodename);
+				}
+				source32++;
+			}
+			break;
+	}
+	kfree(kbuff);
+	if (debug) {
+		dev_info(&znode->pdev->dev, "%s 0x%lx bytes written for %s\n",
+			__func__, (unsigned long)(count), znode->nodename);
+	}
+	return count;
+}
+
+static loff_t fo_lseek(struct file *file, loff_t offset, int origin)
+{
+	struct zfpga_node_data *znode = file->private_data;
+	if (debug) {
+		dev_info(&znode->pdev->dev, "%s adress 0x%llx for %s\n",
+			__func__, offset, znode->nodename);
+	}
+	file->f_pos = offset; /* only absolut positioning */
+	return offset;
+}
+
+static int fo_fasync(int fd, struct file *file, int mode)
+{
+	struct zfpga_node_data *znode = file->private_data;
+	struct fasync_struct** async_callback = NULL;
+	if (debug) {
+		dev_info(&znode->pdev->dev, "%s entered for %s\n",
+			__func__, znode->nodename);
+	}
+	switch (znode->nodetype)
+	{
+		case NODE_TYPE_REG:
+			async_callback = &znode->node_specifc_data.reg.aqueue;
+			break;
+		case NODE_TYPE_DSP:
+			async_callback = &znode->node_specifc_data.dsp.aqueue;
+			break;
+	}
+	if(async_callback) {
+		return (fasync_helper(fd, file, mode, async_callback));
+	}
+	else {
+		return -EFAULT;
+	}
+}
+
+static int fo_release(struct inode *inode, struct file *file)
+{
+	struct zfpga_node_data *znode = file->private_data;
+	if (debug) {
+		dev_info(&znode->pdev->dev, "%s for %s entered\n",
+			__func__, znode->nodename);
+	}
+	fo_fasync(-1, file, 0); /* see ldd3 chapter 6.4 */
+	clear_bit(FLAG_OPEN, &znode->flags);
+	file->private_data = NULL;
+	if (debug) {
+		dev_info(&znode->pdev->dev, "device %s closed\n", znode->nodename);
+	}
+	return 0;
+}
+
+/* ---------------------- ioctl helper methods ---------------------- */
+int fpga_reset(const struct zfpga_node_data *znode)
+{
+	if (debug) {
+		dev_info(&znode->pdev->dev, "%s entered for %s\n",
+			__func__, znode->nodename);
+	}
+	if (znode->nodetype == NODE_TYPE_BOOT) {
+		gpio_set_value(znode->node_specifc_data.boot.gpio_reset, 1);
+		udelay(10);
+		gpio_set_value(znode->node_specifc_data.boot.gpio_reset, 1);
+		/* resetting causes unconfigured state */
+		clear_bit(FLAG_GLOBAL_FPGA_CONFIGURED, &global_flags);
+		return 0;
+	}
+	dev_info(&znode->pdev->dev, "%s was called for %s which is not a boot node!\n",
+		__func__, znode->nodename);
+	return -EFAULT;
+}
+
+static int dsp_reset(struct zfpga_node_data *znode)
+{
+	void* adr = znode->base + FPGA_ADDR_DSP_CTRL;
+	if (debug) {
+		dev_info(&znode->pdev->dev, "%s entered for %s\n",
+			__func__, znode->nodename);
+	}
+	iowrite32(ioread32(adr) | FPGA_DSP_CTRL_BIT_RESET, adr);
+	udelay(400); /* dsp requires 4096 CLKIN (25MHz) cycles after deasserting reset */
+	clear_bit(FLAG_DSP_RUNNING, &znode->flags);
+	return 0;
+}
+
+static unsigned long dsp_get_boot_block_len(struct dsp_bootheader *h)
+{
+	unsigned long nr = h->count;
+	switch (h->tag) {
+		case DSP_BOOT_BLOCK_FINALINIT:	return 0x600; /* fix length */
+		case DSP_BOOT_BLOCK_ZERO_LDATA:	return 0;
+		case DSP_BOOT_BLOCK_ZERO_L48:	return 0;
+		case DSP_BOOT_BLOCK_INIT_L16:	return (nr << 1);
+		case DSP_BOOT_BLOCK_INIT_L32:	return (nr << 2);
+		case DSP_BOOT_BLOCK_INIT_L48:	return (((nr + 1) & 0xFFFFFFFE) * 6);
+		case DSP_BOOT_BLOCK_INIT_L64:	return (nr << 3);
+		case DSP_BOOT_BLOCK_ZERO_EXT8:	return 0;
+		case DSP_BOOT_BLOCK_ZERO_EXT16:	return 0;
+	}
+	return nr;
+}
+
+/* ioctl's arg for dsp booting contains dsp's boot file. This is organized
+ * as sequence of blocks of different types see 
+ * "VisualDSP++ / Loader and Utilities Manual" for more details */
+static int dsp_boot(struct zfpga_node_data *znode, unsigned long arg)
+{
+	unsigned long blocklen, transaction_no;
+	u32 *data;
+	void *kmem;
+	struct dsp_bootheader act_bootheader;
+	char *user_data = (char*) arg;
+
+	dsp_reset(znode);
+	/* first data block to load is the dsp´s bootstrap loader
+	 * this block has no header */
+	act_bootheader.tag = DSP_BOOT_BLOCK_INIT_L48;
+	act_bootheader.count = 0x100; /* with fix length */
+	act_bootheader.address = 0x40000; /* and fix adress */
+	if (debug) {
+		dev_info(&znode->pdev->dev, "%s entering boot loop for %s\n",
+			__func__, znode->nodename);
+	}
+	for (;;) {
+		if (act_bootheader.tag >= DSP_BOOT_BLOCK_COUNT) {
+			dev_info(&znode->pdev->dev, "%s invalid tag %u found for %s!\n",
+				__func__, act_bootheader.tag, znode->nodename);
+			return -EFAULT;
+		}
+		blocklen = dsp_get_boot_block_len(&act_bootheader);
+		if (debug) {
+			dev_info(&znode->pdev->dev, "%s boot block: type %u length %lu start 0x%x\n",
+				__func__, act_bootheader.tag, blocklen, act_bootheader.address);
+		}
+		/* is there data for current block header to send ? */
+		if (blocklen > 0) {
+			kmem = kmalloc(blocklen,GFP_KERNEL);
+			if (kmem == NULL) {
+				dev_info(&znode->pdev->dev, "%s memory allocation for boot block data failed for %s\n",
+					__func__, znode->nodename);
+				return -ENOMEM;
+			}
+			if (copy_from_user(kmem, user_data, blocklen)) {
+				dev_info(&znode->pdev->dev, "%s copy_from_user for boot block data failed for %s\n",
+					__func__, znode->nodename);
+				kfree(kmem);
+				return -EFAULT;
+			}
+			user_data += blocklen;
+			/* write all the data of the desired block to the FPGA_ADDR_DSP_SPI */
+			data = kmem;
+			for (transaction_no=0; transaction_no<(blocklen>>2); transaction_no++,data++)
+				iowrite32(*data, znode->base + FPGA_ADDR_DSP_SPI);
+			kfree(kmem);
+			/* for each boot block wait at least 10 mS */
+			msleep(10);
+		}
+		if (debug) {
+			dev_info(&znode->pdev->dev, "%s boot datablock type %u done for %s\n",
+				__func__, act_bootheader.tag, znode->nodename);
+		}
+		if (act_bootheader.tag == DSP_BOOT_BLOCK_FINALINIT) {
+			break; /* we have finished */
+		}
+		/* read next boot header */
+		if (copy_from_user(&act_bootheader, user_data, sizeof(act_bootheader))) {
+			dev_info(&znode->pdev->dev, "%s copy_from_user for boot block header failed for %s\n",
+				__func__, znode->nodename);
+			return -EFAULT;
+		}
+		user_data += sizeof(act_bootheader);
+		/* send boot header */
+		iowrite32(act_bootheader.tag, znode->base + FPGA_ADDR_DSP_SPI);
+		iowrite32(act_bootheader.count, znode->base + FPGA_ADDR_DSP_SPI);
+		iowrite32(act_bootheader.address, znode->base + FPGA_ADDR_DSP_SPI);
+		/* in case of ZeroX tag Headers there must be a delay of 2mS + act_bootheader.count * 100nS */
+		switch (act_bootheader.tag) {
+			case DSP_BOOT_BLOCK_FINALINIT: break;
+			case DSP_BOOT_BLOCK_INIT_L16: break;
+			case DSP_BOOT_BLOCK_INIT_L32: break;
+			case DSP_BOOT_BLOCK_INIT_L48: break;
+			case  DSP_BOOT_BLOCK_INIT_L64: break;
+			default: msleep(20); /* should be 2ms + count*100nS, count is max 1.5*2^16 */
+		}
+	}
+	if (debug) {
+		dev_info(&znode->pdev->dev, "%s booting successful for %s\n",
+			__func__, znode->nodename);
+	}
+	set_bit(FLAG_DSP_RUNNING, &znode->flags);
+	return 0;
+}
+
+static int dsp_int_generate(const struct zfpga_node_data *znode)
+{
+	void* adr = znode->base + FPGA_ADDR_DSP_CTRL;
+	if (debug) {
+		dev_info(&znode->pdev->dev, "%s entered for %s\n",
+			__func__, znode->nodename);
+	}
+	iowrite32(ioread32(adr) | FPGA_DSP_CTRL_BIT_IRQ2, adr);
+	return 0;
+}
+
+static int dsp_int_enable(const struct zfpga_node_data *znode)
+{
+	void* adr = znode->base + FPGA_ADDR_DSP_CFG;
+	if (debug) {
+		dev_info(&znode->pdev->dev, "%s entered for %s\n",
+			__func__, znode->nodename);
+	}
+	iowrite32(ioread32(adr) | FPGA_DSP_CFG_BIT_IRQ_ENABLE, adr);
+	return 0;
+}
+
+static int dsp_int_disable(const struct zfpga_node_data *znode)
+{
+	void* adr = znode->base + FPGA_ADDR_DSP_CFG;
+	if (debug) {
+		dev_info(&znode->pdev->dev, "%s entered for %s\n",
+			__func__, znode->nodename);
+	}
+	iowrite32(ioread32(adr) & (~FPGA_DSP_CFG_BIT_IRQ_ENABLE), adr);
+	return 0;
+}
+
+static int dsp_read_io(const struct zfpga_node_data *znode, unsigned long arg)
+{	// reads the register[num] with num in arg
+	void* adr = znode->base + (arg << 2);
+	if (debug) {
+		dev_info(&znode->pdev->dev, "%s entered for %s\n",
+			__func__, znode->nodename);
+	}
+	return ioread32(adr);
+}
+
+/* ---------------------- ioctls ---------------------- */
+static long fo_ioctl_boot (struct file *file, unsigned int cmd, unsigned long arg)
+{
+	struct zfpga_node_data *znode = file->private_data;
+	if (debug) {
+		dev_info(&znode->pdev->dev, "%s entered for %s, cmd: 0x%x, arg: %lx\n",
+			__func__, znode->nodename, cmd, arg);
+	}
+	switch (cmd) {
+		case FPGA_RESET: return(fpga_reset(znode));
+		default:
+			dev_info(&znode->pdev->dev, "%s cmd: 0x%x invalid for %s\n",
+				__func__, cmd, znode->nodename);
+			return(-EINVAL);
+	}
+}
+
+long fo_ioctl_dsp(struct file *file, unsigned int cmd, unsigned long arg)
+{
+	struct zfpga_node_data *znode = file->private_data;
+	if (debug) {
+		dev_info(&znode->pdev->dev, "%s entered for %s cmd: 0x%x, arg: %lx\n",
+			__func__, znode->nodename, cmd, arg);
+	}
+	switch (cmd) {
+		case DSP_RESET: return(dsp_reset(znode));
+		case DSP_BOOT: return(dsp_boot(znode, arg));
+		case DSP_INT_REQ: return(dsp_int_generate(znode));
+		case DSP_INT_ENABLE: return(dsp_int_enable(znode));
+		case DSP_INT_DISABLE: return(dsp_int_disable(znode));
+		case IO_READ: return(dsp_read_io(znode, arg));
+		default:
+			dev_info(&znode->pdev->dev, "%s cmd: 0x%x invalid for %s\n",
+				__func__, cmd, znode->nodename);
+			return(-EINVAL);
+	}
+}
+
+/* ---------------------- fops array ---------------------- */
+static const struct file_operations fops_arr[NODE_TYPE_COUNT] = {
+	[NODE_TYPE_BOOT] = {
+		.owner = THIS_MODULE,
+		.open = fo_open,
+		.release = fo_release,
+		.llseek = no_llseek,
+		.write = fo_write,
+		.compat_ioctl = fo_ioctl_boot
+	},
+	[NODE_TYPE_REG] = {
+		.owner = THIS_MODULE,
+		.open = fo_open,
+		.release = fo_release,
+		.llseek = fo_lseek,
+		.read = fo_read,
+		.write = fo_write,
+		.fasync = fo_fasync
+	},
+	[NODE_TYPE_DSP] = {
+		.owner = THIS_MODULE,
+		.open = fo_open,
+		.release = fo_release,
+		.llseek = fo_lseek,
+		.read = fo_read,
+		.write = fo_write,
+		.unlocked_ioctl = fo_ioctl_dsp,
+		.fasync = fo_fasync,
+	},
+};
+
+/* ---------------------- create char devices ---------------------- */
+static int zdev_create_char_devices(struct platform_device *pdev, struct zfpga_dev_data *zfpga)
+{
+	unsigned int node_added_count;
+	unsigned int inode;
+	int ret = 0;
+
+	if (zfpga->count_nodes) {
+		if ((ret = alloc_chrdev_region (
+					&zfpga->first_char_node,
+					0,
+					zfpga->count_nodes,
+					FPGADEV_NAME))) {
+			dev_info(&pdev->dev, "can't alloc chardev region for %s\n",
+				pdev->dev.of_node->full_name);
+			goto exit;
+		}
+		if (debug) {
+			dev_info(&pdev->dev, "chardev region created for %s\n",
+				pdev->dev.of_node->full_name);
+		}
+		for (node_added_count=0; node_added_count<zfpga->count_nodes; node_added_count++) {
+			cdev_init(
+				&zfpga->nodes[node_added_count].cdev,
+				&fops_arr[zfpga->nodes[node_added_count].nodetype]);
+			zfpga->nodes[node_added_count].cdev.owner = THIS_MODULE;
+			if ((ret = cdev_add(
+							&zfpga->nodes[node_added_count].cdev,
+							zfpga->first_char_node+node_added_count, 1))) {
+				dev_info(&pdev->dev, "cdev_add failed for %s\n",
+					zfpga->nodes[node_added_count].nodename);
+				goto exit_cleanup_nodes;
+			}
+			if (debug) {
+				dev_info(&pdev->dev, "cdev_add succeeded for %s\n",
+					zfpga->nodes[node_added_count].nodename);
+			}
+		}
+		for (node_added_count=0; node_added_count<zfpga->count_nodes; node_added_count++) {
+			zfpga->nodes[node_added_count].device = device_create(
+				zfpga_class,
+				&pdev->dev,
+				zfpga->first_char_node+node_added_count,
+				NULL,
+				"%s",
+				zfpga->nodes[node_added_count].nodename);
+            if(IS_ERR(zfpga->nodes[node_added_count].device)) {
+				ret = PTR_ERR(zfpga->nodes[node_added_count].device);
+				dev_info(&pdev->dev, "device_create failed for %s\n",
+					zfpga->nodes[node_added_count].nodename);
+				goto exit_cleanup_devices;
+			}
+			if (debug) {
+				dev_info(&pdev->dev, "device_create succeded for %s\n",
+					zfpga->nodes[node_added_count].nodename);
+			}
+		}
+	}
+	return 0;
+
+exit_cleanup_devices:
+	for (inode=0; inode<node_added_count; inode++) {
+		if (debug) {
+			dev_info(&pdev->dev, "exit_cleanup_devices for %s\n",
+				zfpga->nodes[inode].nodename);
+		}
+		device_destroy(zfpga_class, zfpga->first_char_node+inode);
+		zfpga->nodes[inode].device = NULL;
+	}
+	/* all cdevs were created here */
+	node_added_count = zfpga->count_nodes;
+
+exit_cleanup_nodes:
+	for (inode=0; inode<node_added_count; inode++) {
+		if (debug) {
+			dev_info(&pdev->dev, "exit_cleanup_nodes for %s\n",
+				zfpga->nodes[inode].nodename);
+		}
+		cdev_del(&zfpga->nodes[inode].cdev);
+	}
+exit:
+	return ret;
+}
+
 /* ---------------------- apply devicetree settings ----------------------
  * - setup zfpga_dev_data *zfpga
  * - ioremap
  * - interrupts
  */
-static int check_dt_settings(struct platform_device *pdev, struct zfpga_dev_data *zfpga)
+static int zdev_check_dt_settings(struct platform_device *pdev, struct zfpga_dev_data *zfpga)
 {
 	struct resource res;
 	u32 nodetype;
-	unsigned int irq, bytes_per_transaction;
-	irq_handler_t irqhandler;
+	unsigned int bytes_per_transaction;
 	struct zfpga_node_data *curr_node_data;
 	int ret = 0;
 	struct device_node *child_node_dt = NULL;
@@ -1065,11 +1115,9 @@ static int check_dt_settings(struct platform_device *pdev, struct zfpga_dev_data
 					curr_node_data->size);
 		}
 		/* device specific entires */
-	    irqhandler = NULL;
 		switch (curr_node_data->nodetype) {
 			case NODE_TYPE_BOOT:
-			    irqhandler = boot_isr;
-				ret = create_gpio(
+				ret = znode_create_gpio(
 					&zfpga->nodes[zfpga->count_nodes],
 					child_node_dt,
 					GPIOF_DIR_OUT,
@@ -1078,7 +1126,7 @@ static int check_dt_settings(struct platform_device *pdev, struct zfpga_dev_data
 				if(ret) {
 					goto exit;
 				}
-				ret = create_gpio(
+				ret = znode_create_gpio(
 					&zfpga->nodes[zfpga->count_nodes],
 					child_node_dt,
 					GPIOF_DIR_IN,
@@ -1108,32 +1156,8 @@ static int check_dt_settings(struct platform_device *pdev, struct zfpga_dev_data
 						curr_node_data->nodename);
 				}
 				break;
-			case NODE_TYPE_REG:
-			    irqhandler = reg_isr;
-				break;
-			case NODE_TYPE_DSP:
-			    irqhandler = dsp_isr;
-				break;
 		}
-		irq = irq_of_parse_and_map(child_node_dt, 0);
-		if (irq && irqhandler) {
-			ret = request_irq(
-				irq,
-				irqhandler,
-				IRQF_SHARED,
-				curr_node_data->nodename,
-				curr_node_data);
-			if (ret < 0) {
-				dev_info(&pdev->dev, "failed to request interrupt for %s\n",
-					curr_node_data->nodename);
-				goto exit;
-			}
-			if (debug) {
-				dev_info(&pdev->dev, "interrupt %u requested for %s\n",
-					irq, curr_node_data->nodename);
-			}
-			curr_node_data->irq = irq;
-		}
+		curr_node_data->irq = irq_of_parse_and_map(child_node_dt, 0);
 		/* next node */
 		zfpga->count_nodes++;
 	}
@@ -1141,7 +1165,7 @@ static int check_dt_settings(struct platform_device *pdev, struct zfpga_dev_data
 
 exit:
 	/* remove interrupt handlers (other resources are managed)  */
-	devm_free_interrupts(pdev, zfpga);
+	zdev_free_interrupts(pdev, zfpga);
 	return ret;
 }
 
@@ -1167,10 +1191,10 @@ static int zfpga_probe(struct platform_device *pdev)
 		goto exit;
 	}
 	platform_set_drvdata(pdev, zfpga);
-	if((ret = check_dt_settings(pdev, zfpga))) {
+	if((ret = zdev_check_dt_settings(pdev, zfpga))) {
 		goto exit_cleanup_drvdata;
 	}
-	if((ret = create_char_devices(pdev, zfpga))) {
+	if((ret = zdev_create_char_devices(pdev, zfpga))) {
 		goto exit_cleanup_drvdata;
 	}
 	return 0;
@@ -1190,7 +1214,7 @@ static int zfpga_remove(struct platform_device *pdev)
 	}
 	zfpga = platform_get_drvdata(pdev);
 	if (!IS_ERR(zfpga) && zfpga->count_nodes) {
-		devm_free_interrupts(pdev, zfpga);
+		zdev_free_interrupts(pdev, zfpga);
 		if (debug) {
 			dev_info(&pdev->dev, "%s removing device nodes\n", __func__);
 		}

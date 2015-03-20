@@ -566,20 +566,22 @@ static ssize_t fo_write (struct file *file, const char *buf, size_t count, loff_
 						source8++;
 						break;
 					case 2:
-						iowrite16(*((u16*)source8), dest32);
+						/* boot data is big endian */
+						iowrite16(be16_to_cpu(*((u16*)source8)), dest32);
 						if (debug > 2) {
 							dev_info(&znode->pdev->dev,
 								"%s: 0x%04x written for %s\n",
-								__func__, *((u16*)source8), znode->nodename);
+								__func__, be16_to_cpu(*((u16*)source8)), znode->nodename);
 						}
 						source8+=2;
 						break;
 					case 4:
-						iowrite32(*((u32*)source8), dest32);
+						/* boot data is big endian */
+						iowrite32(be32_to_cpu(*((u32*)source8)), dest32);
 						if (debug > 2) {
 							dev_info(&znode->pdev->dev,
 								"%s: 0x%08x written for %s\n",
-								__func__, *((u32*)source8), znode->nodename);
+								__func__, be32_to_cpu(*((u32*)source8)), znode->nodename);
 						}
 						source8+=4;
 						break;

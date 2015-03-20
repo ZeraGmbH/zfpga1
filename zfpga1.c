@@ -693,7 +693,7 @@ int fpga_reset(const struct zfpga_node_data *znode)
 	if (znode->nodetype == NODE_TYPE_BOOT) {
 		gpio_set_value(znode->node_specifc_data.boot.gpio_reset, 1);
 		udelay(10);
-		gpio_set_value(znode->node_specifc_data.boot.gpio_reset, 1);
+		gpio_set_value(znode->node_specifc_data.boot.gpio_reset, 0);
 		/* resetting causes unconfigured state */
 		clear_bit(FLAG_GLOBAL_FPGA_CONFIGURED, &global_flags);
 		return 0;

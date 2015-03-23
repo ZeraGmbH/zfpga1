@@ -1130,6 +1130,8 @@ static int zdev_check_dt_settings(struct platform_device *pdev, struct zfpga_dev
 				if(ret) {
 					goto exit;
 				}
+				/* keep fpga in reset until bootnode opened */
+				gpio_set_value(curr_node_data->node_specifc_data.boot.gpio_reset, 1);
 				ret = znode_create_gpio(
 					&zfpga->nodes[zfpga->count_nodes],
 					child_node_dt,

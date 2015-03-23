@@ -174,6 +174,27 @@ enum dsp_boot_block_tagg {
 };
 
 /* ---------------------- common fops helper ---------------------- */
+int fpga_reset(const struct zfpga_node_data *znode)
+{
+	if (debug) {
+		dev_info(&znode->pdev->dev, "%s entered for %s\n",
+			__func__, znode->nodename);
+	}
+	if (znode->nodetype == NODE_TYPE_BOOT) {
+		gpio_set_value(znode->node_specifc_data.boot.gpio_reset, 1);
+		udelay(10);
+		gpio_set_value(znode->node_specifc_data.boot.gpio_reset, 0);
+		/* fpga XC6SLX25 needs ~850µs for internal housekeeping after reset */
+		mdelay(20);
+		/* resetting causes unconfigured state */
+		clear_bit(FLAG_GLOBAL_FPGA_CONFIGURED, &global_flags);
+		return 0;
+	}
+	dev_info(&znode->pdev->dev, "%s was called for %s which is not a boot node!\n",
+		__func__, znode->nodename);
+	return -EFAULT;
+}
+
 static void* fops_check_and_alloc_kmem(
 	const struct zfpga_node_data *znode,
 	size_t count, loff_t *offset)
@@ -182,13 +203,6 @@ static void* fops_check_and_alloc_kmem(
 	int ret;
 
 	switch (znode->nodetype) {
-		case NODE_TYPE_BOOT: /* Not booting twice incidentally */
-			if (test_bit(FLAG_GLOBAL_FPGA_CONFIGURED, &global_flags)) {
-				dev_info(&znode->pdev->dev, "%s failed (fpga already configured) for %s!\n",
-					__func__, znode->nodename);
-				return ERR_PTR(-ENODEV);
-			}
-			break;
 		case NODE_TYPE_REG:
 			/* Note: fpga is memory mapped 1:1. Therefore limits are taken from
 			 * devicetree settings */
@@ -430,6 +444,18 @@ static int fo_open(struct inode *inode, struct file *file)
 		if (!test_bit(FLAG_GLOBAL_FPGA_CONFIGURED, &global_flags)) {
 			dev_info(&znode->pdev->dev, "opening %s requires configured FPGA!\n",
 				znode->nodename);
+			return -ENODEV;
+		}
+	}
+	/* boot device: avoid accidental double fpga booting */
+	else {
+		if (test_bit(FLAG_GLOBAL_FPGA_CONFIGURED, &global_flags)) {
+			dev_info(&znode->pdev->dev, "%s already configured!\n",
+				znode->nodename);
+			return -ENODEV;
+		}
+		if (fpga_reset(znode)) {
+			dev_info(&znode->pdev->dev, "zfpga: unable to reset FPGA!\n");
 			return -ENODEV;
 		}
 	}
@@ -684,25 +710,6 @@ static int fo_release(struct inode *inode, struct file *file)
 }
 
 /* ---------------------- ioctl helper methods ---------------------- */
-int fpga_reset(const struct zfpga_node_data *znode)
-{
-	if (debug) {
-		dev_info(&znode->pdev->dev, "%s entered for %s\n",
-			__func__, znode->nodename);
-	}
-	if (znode->nodetype == NODE_TYPE_BOOT) {
-		gpio_set_value(znode->node_specifc_data.boot.gpio_reset, 1);
-		udelay(10);
-		gpio_set_value(znode->node_specifc_data.boot.gpio_reset, 0);
-		/* resetting causes unconfigured state */
-		clear_bit(FLAG_GLOBAL_FPGA_CONFIGURED, &global_flags);
-		return 0;
-	}
-	dev_info(&znode->pdev->dev, "%s was called for %s which is not a boot node!\n",
-		__func__, znode->nodename);
-	return -EFAULT;
-}
-
 static int dsp_reset(struct zfpga_node_data *znode)
 {
 	void* adr = znode->base + FPGA_ADDR_DSP_CTRL;
@@ -1085,11 +1092,6 @@ static int zdev_check_dt_settings(struct platform_device *pdev, struct zfpga_dev
 				goto exit;
 			}
 			else {
-				ret = fpga_reset(&zfpga->nodes[zfpga->count_nodes]);
-				if (ret) {
-					dev_info(&pdev->dev, "zfpga: unable to reset FPGA!\n");
-					goto exit;
-				}
 				set_bit(FLAG_GLOBAL_FPGA_BOOT_DEVICE_FOUND, &global_flags);
 			}
 		}
@@ -1116,7 +1118,7 @@ static int zdev_check_dt_settings(struct platform_device *pdev, struct zfpga_dev
 					curr_node_data->base,
 					curr_node_data->size);
 		}
-		/* device specific entires */
+		/* device specific entries */
 		switch (curr_node_data->nodetype) {
 			case NODE_TYPE_BOOT:
 				ret = znode_create_gpio(
@@ -1193,10 +1195,10 @@ static int zfpga_probe(struct platform_device *pdev)
 		goto exit;
 	}
 	platform_set_drvdata(pdev, zfpga);
-	if((ret = zdev_check_dt_settings(pdev, zfpga))) {
+	if ((ret = zdev_check_dt_settings(pdev, zfpga))) {
 		goto exit_cleanup_drvdata;
 	}
-	if((ret = zdev_create_char_devices(pdev, zfpga))) {
+	if ((ret = zdev_create_char_devices(pdev, zfpga))) {
 		goto exit_cleanup_drvdata;
 	}
 	return 0;

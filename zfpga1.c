@@ -444,7 +444,7 @@ static int fo_open(struct inode *inode, struct file *file)
 			return -ENODEV;
 		}
 	}
-	/* boot device: avoid accidental double fpga booting */
+	/* boot device: avoid accidental double fpga booting / write only / reset fpga */
 	else {
 		if (test_bit(FLAG_GLOBAL_FPGA_CONFIGURED, &global_flags)) {
 			dev_info(&znode->pdev->dev, "%s already configured!\n",

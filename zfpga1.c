@@ -435,9 +435,6 @@ static int fo_open(struct inode *inode, struct file *file)
 		dev_info(&znode->pdev->dev, "%s already opened!\n", znode->nodename);
 		return -EBUSY;
 	}
-	else {
-		set_bit(FLAG_OPEN, &znode->flags);
-	}
 	/* reg and dsp devices require a configured/booted FPGA */
 	if(znode->nodetype == NODE_TYPE_REG ||
 		znode->nodetype == NODE_TYPE_DSP) {
@@ -478,6 +475,8 @@ static int fo_open(struct inode *inode, struct file *file)
 	if(znode_request_interrupt(znode)) {
 		return -ENODEV;
 	}
+
+	set_bit(FLAG_OPEN, &znode->flags);
 	file->private_data = znode;
 	if (debug) {
 		dev_info(&znode->pdev->dev, "device %s opened\n", znode->nodename);

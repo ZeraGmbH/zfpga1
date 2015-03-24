@@ -176,21 +176,17 @@ enum dsp_boot_block_tagg {
 /* ---------------------- common fops helper ---------------------- */
 int fpga_reset(const struct zfpga_node_data *znode)
 {
-	unsigned int count;
 	if (debug) {
 		dev_info(&znode->pdev->dev, "%s entered for %s\n",
 			__func__, znode->nodename);
 	}
 	if (znode->nodetype == NODE_TYPE_BOOT) {
-		for (count=0; count<10; count++) {
-			gpio_set_value(znode->node_specifc_data.boot.gpio_reset, 1);
-			udelay(10);
-			gpio_set_value(znode->node_specifc_data.boot.gpio_reset, 0);
-			/* fpga XC6SLX25 needs ~850µs for internal housekeeping after reset */
-			mdelay(2);
-		}
-		/* Resetting causes unconfigured state. In case fpga was booted this
-		 * flag is properly handled by fpga-done interrupt */
+		gpio_set_value(znode->node_specifc_data.boot.gpio_reset, 1);
+		udelay(10);
+		gpio_set_value(znode->node_specifc_data.boot.gpio_reset, 0);
+		/* fpga XC6SLX25 needs ~850µs for internal housekeeping after reset */
+		mdelay(20);
+		/* resetting causes unconfigured state */
 		clear_bit(FLAG_GLOBAL_FPGA_CONFIGURED, &global_flags);
 		return 0;
 	}

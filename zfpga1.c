@@ -1203,6 +1203,7 @@ static int zfpga_probe(struct platform_device *pdev)
 	if ((ret = zdev_create_char_devices(pdev, zfpga))) {
 		goto exit_cleanup_drvdata;
 	}
+	dev_info(&pdev->dev, "zfpga initialized\n");
 	return 0;
 
 exit_cleanup_drvdata:

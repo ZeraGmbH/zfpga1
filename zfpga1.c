@@ -458,6 +458,11 @@ static int fo_open(struct inode *inode, struct file *file)
 				znode->nodename);
 			return -ENODEV;
 		}
+		if ( (file->f_flags & O_ACCMODE) != O_WRONLY) {
+			dev_info(&znode->pdev->dev, "%s must be opened write only!\n",
+				znode->nodename);
+			return -ENODEV;
+		}
 		if (fpga_reset(znode)) {
 			dev_info(&znode->pdev->dev, "zfpga: unable to reset FPGA!\n");
 			return -ENODEV;

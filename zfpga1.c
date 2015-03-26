@@ -23,7 +23,8 @@
 
 #include "zfpga1.h"
 
-/* module parameter keeper:
+/* module parameter keeper
+ * debug:
  * = 0: no messages
  * >= 1: messages for all init/exit stuff
  * >= 2: + interrupt messages
@@ -86,6 +87,7 @@ struct zfpga_node_data {
 	struct platform_device *pdev; /* don't forget our grandparent */
 	volatile unsigned long flags; /* data type arch specific for atomic bit access */
 	unsigned int irq;             /* > 0 -> an interrupt handler was requested */
+	u8 endian32[4];               /* fsl-EIM has special ideas of addressing */
     union node_specific {
 		struct boot_data boot;
 		struct reg_data reg;
@@ -172,6 +174,29 @@ enum dsp_boot_block_tagg {
 
 	DSP_BOOT_BLOCK_COUNT
 };
+
+static u32 znode_endian_order(struct zfpga_node_data *znode, u32 val)
+{
+	unsigned int count;
+	u8 *source, *target;
+	u32 retval;
+	if(
+		znode->endian32[0] ||
+		znode->endian32[1] ||
+		znode->endian32[2] ||
+		znode->endian32[3] ) {
+		retval = 0;
+		source = (u8*)&val;
+		target = (u8*)&retval;
+		for (count=0; count<sizeof(u32); count++) {
+			target[count] = source[znode->endian32[count]];
+		}
+	}
+	else {
+		retval = val;
+	}
+	return retval;
+}
 
 /* ---------------------- common fops helper ---------------------- */
 int fpga_reset(const struct zfpga_node_data *znode)
@@ -553,7 +578,7 @@ static ssize_t fo_write (struct file *file, const char *buf, size_t count, loff_
 {
 	void *kbuff;
 	u8 *source8;
-	u32 *dest32, *source32;
+	u32 *dest32, *source32, val32;
 	size_t transaction_no, transaction_count;
 	struct zfpga_node_data *znode = file->private_data;
 
@@ -607,11 +632,12 @@ static ssize_t fo_write (struct file *file, const char *buf, size_t count, loff_
 						break;
 					case 4:
 						/* boot data is big endian */
-						iowrite32(be32_to_cpu(*((u32*)source8)), dest32);
+						val32 = be32_to_cpu(*((u32*)source8));
+						iowrite32(znode_endian_order(znode, val32), dest32);
 						if (debug > 2) {
 							dev_info(&znode->pdev->dev,
 								"%s: 0x%08x written for %s\n",
-								__func__, be32_to_cpu(*((u32*)source8)), znode->nodename);
+								__func__, val32, znode->nodename);
 						}
 						source8+=4;
 						break;
@@ -1100,11 +1126,32 @@ static int zdev_check_dt_settings(struct platform_device *pdev, struct zfpga_dev
 			}
 		}
 		curr_node_data->nodetype = (u8)nodetype;
+		/* node's 32bit endianess */
+		if(of_property_read_u8_array(child_node_dt, "endian32", curr_node_data->endian32, 4)) {
+			curr_node_data->endian32[0] = 0;
+			curr_node_data->endian32[1] = 0;
+			curr_node_data->endian32[2] = 0;
+			curr_node_data->endian32[3] = 0;
+			if (debug) {
+				dev_info(&pdev->dev, "no endian alignment for %s\n",
+					curr_node_data->nodename);
+			}
+		}
+		else {
+			if (debug) {
+				dev_info(&pdev->dev, "endian alignment for %s: <%u %u %u %u>\n",
+					curr_node_data->nodename,
+					curr_node_data->endian32[0],
+					curr_node_data->endian32[1],
+					curr_node_data->endian32[2],
+					curr_node_data->endian32[3]);
+			}
+		}
 		/* setup node's memory region */
 		ret = of_address_to_resource(pdev->dev.of_node, zfpga->count_nodes, &res);
 		if (ret) {
 			dev_info(&pdev->dev, "can't get memory limits - 'reg' properly set in %s?\n",
-				child_node_dt->full_name);
+				curr_node_data->nodename);
 			goto exit;
 		}
 		res.name = curr_node_data->nodename;

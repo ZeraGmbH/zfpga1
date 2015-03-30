@@ -928,17 +928,43 @@ static long fo_ioctl_boot (struct file *file, unsigned int cmd, unsigned long ar
 long fo_ioctl_dsp(struct file *file, unsigned int cmd, unsigned long arg)
 {
 	struct zfpga_node_data *znode = file->private_data;
-	if (debug) {
-		dev_info(&znode->pdev->dev, "%s entered for %s cmd: 0x%x, arg: %lx\n",
-			__func__, znode->nodename, cmd, arg);
-	}
 	switch (cmd) {
-		case DSP_RESET: return(dsp_reset(znode));
-		case DSP_BOOT: return(dsp_boot(znode, arg));
-		case DSP_INT_REQ: return(dsp_int_generate(znode));
-		case DSP_INT_ENABLE: return(dsp_int_enable(znode));
-		case DSP_INT_DISABLE: return(dsp_int_disable(znode));
-		case IO_READ: return(dsp_read_io(znode, arg));
+		case DSP_RESET:
+			if (debug) {
+				dev_info(&znode->pdev->dev, "%s entered for %s cmd: DSP_RESET, arg: %lx\n",
+					__func__, znode->nodename, arg);
+			}
+			return(dsp_reset(znode));
+		case DSP_BOOT:
+			if (debug) {
+				dev_info(&znode->pdev->dev, "%s entered for %s cmd: DSP_BOOT, arg: %lx\n",
+					__func__, znode->nodename, arg);
+			}
+			return(dsp_boot(znode, arg));
+		case DSP_INT_REQ:
+			if (debug) {
+				dev_info(&znode->pdev->dev, "%s entered for %s cmd: DSP_INT_REQ, arg: %lx\n",
+					__func__, znode->nodename, arg);
+			}
+			return(dsp_int_generate(znode));
+		case DSP_INT_ENABLE:
+			if (debug) {
+				dev_info(&znode->pdev->dev, "%s entered for %s cmd: DSP_INT_ENABLE, arg: %lx\n",
+					__func__, znode->nodename, arg);
+			}
+			return(dsp_int_enable(znode));
+		case DSP_INT_DISABLE:
+			if (debug) {
+				dev_info(&znode->pdev->dev, "%s entered for %s cmd: DSP_INT_DISABLE, arg: %lx\n",
+					__func__, znode->nodename, arg);
+			}
+			return(dsp_int_disable(znode));
+		case IO_READ:
+			if (debug) {
+				dev_info(&znode->pdev->dev, "%s entered for %s cmd: IO_READ, arg: %lx\n",
+					__func__, znode->nodename, arg);
+			}
+			return(dsp_read_io(znode, arg));
 		default:
 			dev_info(&znode->pdev->dev, "%s cmd: 0x%x invalid for %s\n",
 				__func__, cmd, znode->nodename);

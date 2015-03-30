@@ -496,6 +496,10 @@ static int fo_open(struct inode *inode, struct file *file)
 				znode->node_specifc_data.dsp.dsp_magic_id, znode->nodename);
 			return -ENODEV;
 		}
+		if (debug) {
+			dev_info(&znode->pdev->dev, "valid magic id 0x%08X read for %s\n",
+				znode->node_specifc_data.dsp.dsp_magic_id, znode->nodename);
+		}
 	}
 	if(znode_request_interrupt(znode)) {
 		return -ENODEV;

@@ -935,8 +935,8 @@ long fo_ioctl_dsp(struct file *file, unsigned int cmd, unsigned long arg)
 	switch (cmd) {
 		case DSP_RESET:
 			if (DEBUG_NOTIFY) {
-				dev_info(&znode->pdev->dev, "%s entered for %s cmd: DSP_RESET, arg: %lx\n",
-					__func__, znode->nodename, arg);
+				dev_info(&znode->pdev->dev, "%s entered for %s cmd: DSP_RESET\n",
+					__func__, znode->nodename);
 			}
 			return(dsp_reset(znode));
 		case DSP_BOOT:
@@ -947,20 +947,20 @@ long fo_ioctl_dsp(struct file *file, unsigned int cmd, unsigned long arg)
 			return(dsp_boot(znode, arg));
 		case DSP_INT_REQ:
 			if (DEBUG_NOTIFY) {
-				dev_info(&znode->pdev->dev, "%s entered for %s cmd: DSP_INT_REQ, arg: %lx\n",
-					__func__, znode->nodename, arg);
+				dev_info(&znode->pdev->dev, "%s entered for %s cmd: DSP_INT_REQ\n",
+					__func__, znode->nodename);
 			}
 			return(dsp_int_generate(znode));
 		case DSP_INT_ENABLE:
 			if (DEBUG_NOTIFY) {
-				dev_info(&znode->pdev->dev, "%s entered for %s cmd: DSP_INT_ENABLE, arg: %lx\n",
-					__func__, znode->nodename, arg);
+				dev_info(&znode->pdev->dev, "%s entered for %s cmd: DSP_INT_ENABLE\n",
+					__func__, znode->nodename);
 			}
 			return(dsp_int_enable(znode));
 		case DSP_INT_DISABLE:
 			if (DEBUG_NOTIFY) {
-				dev_info(&znode->pdev->dev, "%s entered for %s cmd: DSP_INT_DISABLE, arg: %lx\n",
-					__func__, znode->nodename, arg);
+				dev_info(&znode->pdev->dev, "%s entered for %s cmd: DSP_INT_DISABLE\n",
+					__func__, znode->nodename);
 			}
 			return(dsp_int_disable(znode));
 		case IO_READ:

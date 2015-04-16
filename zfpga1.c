@@ -678,7 +678,7 @@ static ssize_t fo_write (struct file *file, const char *buf, size_t count, loff_
 			iowrite32(transaction_count, znode->base + FPGA_ADDR_DSP_SPI);
 			/*udelay(100); give the dsp 100 uS for initialzing serial and dma */
 			for (transaction_no=0; transaction_no<transaction_count; transaction_no++) {
-				iowrite32(*source32++, dest32);
+				iowrite32(*source32, dest32);
 				if (DEBUG_IO_TANSACTION) {
 					dev_info(&znode->pdev->dev, "%s: 0x%08x written for %s\n",
 						__func__, *source32, znode->nodename);

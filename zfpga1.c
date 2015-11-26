@@ -46,12 +46,14 @@ static const struct of_device_id zfpga_of_match[] = {
 MODULE_DEVICE_TABLE(of, zfpga_of_match);
 
 #define MAX_DSP_COUNT 4
-#define MAX_NODE_COUNT 2+MAX_DSP_COUNT /* boot+reg+n*dsp */
+#define MAX_REG_COUNT 2
+#define MAX_NODE_COUNT 1+MAX_REG_COUNT+MAX_DSP_COUNT /* boot + n*reg + m*dsp */
 
 enum node_types {
 	NODE_TYPE_BOOT = 0,
 	NODE_TYPE_REG,
 	NODE_TYPE_DSP,
+	NODE_TYPE_EC,
 
 	NODE_TYPE_COUNT
 };
@@ -80,6 +82,10 @@ struct dsp_data {
 	struct fasync_struct *aqueue;
 };
 
+struct ec_data {
+	struct fasync_struct *aqueue;
+};
+
 /* device node data: further information on device nodes / devices below */
 struct zfpga_node_data {
 	const char *nodename;
@@ -96,6 +102,7 @@ struct zfpga_node_data {
 		struct boot_data boot;
 		struct reg_data reg;
 		struct dsp_data dsp;
+		struct ec_data ec;
 	} node_specifc_data;
 };
 
@@ -119,6 +126,12 @@ struct zfpga_dev_data {
 };
 
 /* ---------------------- internal constants/structs  ---------------------- */
+/* fpga addresses for ec access */
+#define FPGA_ADDR_EC_IRQ 0x800
+
+/* fpga ec status bits */
+#define FPGA_EC_STAT_COMMON_IRQ (1<<0)
+
 /* fpga addresses for dsp access */
 #define FPGA_ADDR_DSP_SPI 0x00
 #define FPGA_ADDR_DSP_SERIAL 0x04
@@ -233,7 +246,8 @@ static void* fops_check_and_alloc_kmem(
 
 	switch (znode->nodetype) {
 		case NODE_TYPE_REG:
-			/* Note: fpga is memory mapped 1:1. Therefore limits are taken from
+		case NODE_TYPE_EC:
+			/* Note: fpga/ec is memory mapped 1:1. Therefore limits are taken from
 			 * devicetree settings */
 			if ( (*offset < 0) || /* is that possible ?? */
 					((*offset + count) > znode->size) ||
@@ -328,6 +342,7 @@ static irqreturn_t boot_isr (int irq_nr, void *dev_id)
 
 static irqreturn_t reg_isr(int irq_nr, void *dev_id)
 {
+	/* Not used yet */
 	struct zfpga_node_data *znode = dev_id;
 	irqreturn_t ret = IRQ_NONE;
 
@@ -340,6 +355,41 @@ static irqreturn_t reg_isr(int irq_nr, void *dev_id)
 	}
 	else {
 		pr_info("%s: irq for non reg device %s received ?!\n", 
+			__func__, znode->nodename);
+	}
+	return ret;
+}
+
+static irqreturn_t ec_isr(int irq_nr, void *dev_id)
+{
+	struct zfpga_node_data *znode = dev_id;
+	u32 status;
+	void* adr = znode->base + FPGA_ADDR_EC_IRQ;
+	irqreturn_t ret = IRQ_NONE;
+
+	if (DEBUG_INTERRUPT) {
+		pr_info("%s entered int %u for %s!\n",
+			__func__, irq_nr, znode->nodename);
+	}
+	if (znode->nodetype == NODE_TYPE_EC) {
+		status = ioread32(adr);
+		if (DEBUG_INTERRUPT) {
+			pr_info("irq common status 0x%08x read for %s\n", status, znode->nodename);
+		}
+		if (status & FPGA_EC_STAT_COMMON_IRQ) {
+			/* acknowledge irq + fasync */
+			if (DEBUG_NOTIFY) {
+				pr_info("irq common reset for %s\n", znode->nodename);
+			}
+			iowrite32( FPGA_EC_STAT_COMMON_IRQ, adr); /* ack irq */
+			if (znode->node_specifc_data.dsp.aqueue) {
+				kill_fasync(&znode->node_specifc_data.ec.aqueue, SIGIO, POLL_IN);
+			}
+			ret = IRQ_HANDLED;
+		}
+	}
+	else {
+		pr_info("%s: irq for non ec device %s received ?!\n",
 			__func__, znode->nodename);
 	}
 	return ret;
@@ -409,6 +459,12 @@ int znode_request_interrupt(struct zfpga_node_data *znode)
 				irqhandler = dsp_isr;
 			}
 			break;
+		case NODE_TYPE_EC:
+			/* to avoid unwanted fire: fpga must be booted */
+			if(test_bit(FLAG_GLOBAL_FPGA_CONFIGURED, &global_flags)) {
+				irqhandler = ec_isr;
+			}
+			break;
 	}
 	if (znode->irq && irqhandler && !test_bit(FLAG_INT_HAND_ON, &znode->flags)) {
 		ret = request_irq(
@@ -466,7 +522,8 @@ static int fo_open(struct inode *inode, struct file *file)
 	}
 	/* reg and dsp devices require a configured/booted FPGA */
 	if(znode->nodetype == NODE_TYPE_REG ||
-		znode->nodetype == NODE_TYPE_DSP) {
+		znode->nodetype == NODE_TYPE_DSP ||
+		znode->nodetype == NODE_TYPE_EC) {
 		if (!test_bit(FLAG_GLOBAL_FPGA_CONFIGURED, &global_flags)) {
 			dev_info(&znode->pdev->dev, "opening %s requires configured FPGA!\n",
 				znode->nodename);
@@ -536,6 +593,7 @@ static ssize_t fo_read (struct file *file, char *buf, size_t count, loff_t *offs
 	}
 	switch (znode->nodetype) {
 		case NODE_TYPE_REG:
+		case NODE_TYPE_EC:
 			/* reg-device reads data 32bitwise mapped 1:1 */
 			source32 = znode->base + *offset;
 			dest32 = kbuff;
@@ -653,6 +711,7 @@ static ssize_t fo_write (struct file *file, const char *buf, size_t count, loff_
 			}
 			break;
 		case NODE_TYPE_REG:
+		case NODE_TYPE_EC:
 			/* reg-device writes data 32bitwise mapped 1:1 */
 			source32 = kbuff;
 			dest32 = znode->base + *offset;
@@ -721,6 +780,9 @@ static int fo_fasync(int fd, struct file *file, int mode)
 			break;
 		case NODE_TYPE_DSP:
 			async_callback = &znode->node_specifc_data.dsp.aqueue;
+			break;
+		case NODE_TYPE_EC:
+			async_callback = &znode->node_specifc_data.ec.aqueue;
 			break;
 	}
 	if(async_callback) {
@@ -1004,6 +1066,15 @@ static const struct file_operations fops_arr[NODE_TYPE_COUNT] = {
 		.write = fo_write,
 		.unlocked_ioctl = fo_ioctl_dsp,
 		.fasync = fo_fasync,
+	},
+	[NODE_TYPE_EC] = {
+		.owner = THIS_MODULE,
+		.open = fo_open,
+		.release = fo_release,
+		.llseek = fo_lseek,
+		.read = fo_read,
+		.write = fo_write,
+		.fasync = fo_fasync
 	},
 };
 

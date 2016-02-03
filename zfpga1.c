@@ -520,7 +520,7 @@ static int fo_open(struct inode *inode, struct file *file)
 		dev_info(&znode->pdev->dev, "%s already opened!\n", znode->nodename);
 		return -EBUSY;
 	}
-	/* reg and dsp devices require a configured/booted FPGA */
+	/* reg, dsp and ec devices require a configured/booted FPGA */
 	if(znode->nodetype == NODE_TYPE_REG ||
 		znode->nodetype == NODE_TYPE_DSP ||
 		znode->nodetype == NODE_TYPE_EC) {

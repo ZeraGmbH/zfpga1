@@ -382,7 +382,7 @@ static irqreturn_t ec_isr(int irq_nr, void *dev_id)
 				pr_info("irq common reset for %s\n", znode->nodename);
 			}
 			iowrite32( FPGA_EC_STAT_COMMON_IRQ, adr); /* ack irq */
-			if (znode->node_specifc_data.dsp.aqueue) {
+			if (znode->node_specifc_data.ec.aqueue) {
 				kill_fasync(&znode->node_specifc_data.ec.aqueue, SIGIO, POLL_IN);
 			}
 			ret = IRQ_HANDLED;

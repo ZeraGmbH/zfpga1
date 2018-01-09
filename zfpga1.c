@@ -45,9 +45,11 @@ static const struct of_device_id zfpga_of_match[] = {
 };
 MODULE_DEVICE_TABLE(of, zfpga_of_match);
 
+#define MAX_BOOT_COUNT 1
 #define MAX_DSP_COUNT 4
 #define MAX_REG_COUNT 2
-#define MAX_NODE_COUNT 1+MAX_REG_COUNT+MAX_DSP_COUNT /* boot + n*reg + m*dsp */
+#define MAX_EC_COUNT 1
+#define MAX_NODE_COUNT MAX_BOOT_COUNT+MAX_REG_COUNT+MAX_DSP_COUNT+MAX_EC_COUNT /* boot + n*reg + m*dsp + ec */
 
 enum node_types {
 	NODE_TYPE_BOOT = 0,

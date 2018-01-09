@@ -89,7 +89,7 @@ struct ec_data {
 /* device node data: further information on device nodes / devices below */
 struct zfpga_node_data {
 	const char *nodename;
-	u8 nodetype;
+	u8 nodetype;                  /* set by devicetree - see enum node_types above for valid values */
 	void __iomem *base;           /* io mem region address */
 	resource_size_t size;         /* io mem region size */
 	struct cdev cdev;             /* hook to our instance in fop callbacks */

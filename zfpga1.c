@@ -26,6 +26,10 @@
 /* module parameter keeper */
 static int debug = 0;
 
+/* to activate all debug at runtime do
+ * kernel command: zfpga1.debug=7
+ * console: echo '7' > /sys/module/zfpga1/parameters/debug */
+
 enum debug_flags {
 	DBG_NOTIFY = (1<<0),
 	DBG_INTERRUPT = (1<<1),

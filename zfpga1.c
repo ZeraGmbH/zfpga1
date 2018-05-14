@@ -148,7 +148,7 @@ struct zfpga_dev_data {
 /* fpga addresses for msg access */
 #define FPGA_ADDR_MSG_IRQ 0x000
 
-/* fpga ec status bits */
+/* fpga msg status bits */
 #define FPGA_MSG_STAT_IRQ (1<<0)
 
 /* fpga addresses for dsp access */

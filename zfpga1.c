@@ -139,6 +139,12 @@ struct zfpga_dev_data {
 };
 
 /* ---------------------- internal constants/structs  ---------------------- */
+/* fpga addresses for reg access */
+#define FPGA_ADDR_REG_IRQ 0xFF8
+
+/* fpga reg status bits */
+#define FPGA_REG_STAT_IRQ (1<<0)
+
 /* fpga addresses for ec access */
 #define FPGA_ADDR_EC_IRQ 0x800
 
@@ -362,8 +368,9 @@ static irqreturn_t boot_isr (int irq_nr, void *dev_id)
 
 static irqreturn_t reg_isr(int irq_nr, void *dev_id)
 {
-	/* Not used yet */
 	struct zfpga_node_data *znode = dev_id;
+	u32 status;
+	void* adr = znode->base + FPGA_ADDR_REG_IRQ;
 	irqreturn_t ret = IRQ_NONE;
 
 	if (DEBUG_INTERRUPT) {
@@ -371,7 +378,21 @@ static irqreturn_t reg_isr(int irq_nr, void *dev_id)
 			__func__, irq_nr, znode->nodename);
 	}
 	if (znode->nodetype == NODE_TYPE_REG) {
-		/* TODO ? */
+		status = ioread32(adr);
+		if (DEBUG_INTERRUPT) {
+			pr_info("irq status 0x%08x read for %s\n", status, znode->nodename);
+		}
+		if (status & FPGA_REG_STAT_IRQ) {
+			/* acknowledge irq + fasync */
+			if (DEBUG_NOTIFY) {
+				pr_info("irq reset for %s\n", znode->nodename);
+			}
+			iowrite32( FPGA_REG_STAT_IRQ, adr); /* ack irq */
+			if (znode->node_specifc_data.reg.aqueue) {
+				kill_fasync(&znode->node_specifc_data.reg.aqueue, SIGIO, POLL_IN);
+			}
+			ret = IRQ_HANDLED;
+		}
 	}
 	else {
 		pr_info("%s: irq for non reg device %s received ?!\n", 

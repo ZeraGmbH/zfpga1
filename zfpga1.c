@@ -1148,7 +1148,7 @@ static const struct file_operations fops_arr[NODE_TYPE_COUNT] = {
 		.release = fo_release,
 		.llseek = fo_lseek,
 		.read = fo_read,
-		/*.write = fo_write,*/ /* Msg device is readonly */
+		.write = fo_write,
 		.fasync = fo_fasync
 	},
 };

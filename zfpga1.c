@@ -54,7 +54,8 @@ MODULE_DEVICE_TABLE(of, zfpga_of_match);
 #define MAX_REG_COUNT 2
 #define MAX_EC_COUNT 1
 #define MAX_MSG_COUNT 1
-#define MAX_NODE_COUNT MAX_BOOT_COUNT+MAX_REG_COUNT+MAX_DSP_COUNT+MAX_EC_COUNT+MAX_MSG_COUNT
+#define MAX_DBG_COUNT 1
+#define MAX_NODE_COUNT MAX_BOOT_COUNT+MAX_REG_COUNT+MAX_DSP_COUNT+MAX_EC_COUNT+MAX_MSG_COUNT+MAX_DBG_COUNT
 
 enum node_types {
 	NODE_TYPE_BOOT = 0,
@@ -62,6 +63,7 @@ enum node_types {
 	NODE_TYPE_DSP,
 	NODE_TYPE_EC,
 	NODE_TYPE_MSG,
+	NODE_TYPE_DBG,
 
 	NODE_TYPE_COUNT
 };
@@ -273,7 +275,8 @@ static void* fops_check_and_alloc_kmem(
 		case NODE_TYPE_REG:
 		case NODE_TYPE_EC:
 		case NODE_TYPE_MSG:
-			/* Note: fpga/ec/msg is memory mapped 1:1. Therefore limits are taken from
+		case NODE_TYPE_DBG:
+			/* Note: fpga/ec/msg/dbg is memory mapped 1:1. Therefore limits are taken from
 			 * devicetree settings */
 			if ( (*offset < 0) || /* is that possible ?? */
 					((*offset + count) > znode->size) ||
@@ -547,6 +550,7 @@ int znode_request_interrupt(struct zfpga_node_data *znode)
 				irqhandler = ec_isr;
 			}
 			break;
+		/* No interrupt for DBG */
 	}
 	if (znode->irq && irqhandler && !test_bit(FLAG_INT_HAND_ON, &znode->flags)) {
 		ret = request_irq(
@@ -602,11 +606,12 @@ static int fo_open(struct inode *inode, struct file *file)
 		dev_info(&znode->pdev->dev, "%s already opened!\n", znode->nodename);
 		return -EBUSY;
 	}
-	/* reg, dsp, ec and msg devices require a configured/booted FPGA */
+	/* reg, dsp, ec, msg and dbg devices require a configured/booted FPGA */
 	if(znode->nodetype == NODE_TYPE_REG ||
 		znode->nodetype == NODE_TYPE_DSP ||
 		znode->nodetype == NODE_TYPE_EC ||
-		znode->nodetype == NODE_TYPE_MSG) {
+		znode->nodetype == NODE_TYPE_MSG ||
+		znode->nodetype == NODE_TYPE_DBG) {
 		if (!test_bit(FLAG_GLOBAL_FPGA_CONFIGURED, &global_flags)) {
 			dev_info(&znode->pdev->dev, "opening %s requires configured FPGA!\n",
 				znode->nodename);
@@ -678,7 +683,8 @@ static ssize_t fo_read (struct file *file, char *buf, size_t count, loff_t *offs
 		case NODE_TYPE_REG:
 		case NODE_TYPE_EC:
 		case NODE_TYPE_MSG:
-			/* reg-device reads data 32bitwise mapped 1:1 */
+		case NODE_TYPE_DBG:
+			/* data reads 32bitwise mapped 1:1 */
 			source32 = znode->base + *offset;
 			dest32 = kbuff;
 			transaction_count = count>>2;
@@ -796,7 +802,8 @@ static ssize_t fo_write (struct file *file, const char *buf, size_t count, loff_
 			break;
 		case NODE_TYPE_REG:
 		case NODE_TYPE_EC:
-			/* reg-device writes data 32bitwise mapped 1:1 */
+		case NODE_TYPE_DBG:
+			/* data writes 32bitwise mapped 1:1 */
 			source32 = kbuff;
 			dest32 = znode->base + *offset;
 			transaction_count = count>>2;
@@ -1171,6 +1178,15 @@ static const struct file_operations fops_arr[NODE_TYPE_COUNT] = {
 		.read = fo_read,
 		.write = fo_write,
 		.fasync = fo_fasync
+	},
+	[NODE_TYPE_DBG] = {
+		.owner = THIS_MODULE,
+		.open = fo_open,
+		.release = fo_release,
+		.llseek = fo_lseek,
+		.read = fo_read,
+		.write = fo_write,
+		/*.fasync = fo_fasync*/
 	},
 };
 

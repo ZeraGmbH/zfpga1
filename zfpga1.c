@@ -670,7 +670,7 @@ static ssize_t fo_read (struct file *file, char *buf, size_t count, loff_t *offs
 	struct zfpga_node_data *znode = file->private_data;
 
 	if (DEBUG_NOTIFY) {
-		dev_info(&znode->pdev->dev, "%s offset: 0x%llx, length: 0x%zx for %s\n",
+		dev_info(&znode->pdev->dev, "%s offset: 0x%04x, length: 0x%04x for %s\n",
 			__func__, *offset, count, znode->nodename);
 	}
 	kbuff = fops_check_and_alloc_kmem(znode, count, offset);
@@ -692,7 +692,7 @@ static ssize_t fo_read (struct file *file, char *buf, size_t count, loff_t *offs
 				*dest32 = ioread32(source32);
 				if (DEBUG_IO_TANSACTION) {
 					dev_info(&znode->pdev->dev,
-						"%s: 0x%04x read for %s\n",
+						"%s: 0x%08x read for %s\n",
 						__func__, *dest32, znode->nodename);
 				}
 				source32++;
@@ -713,7 +713,7 @@ static ssize_t fo_read (struct file *file, char *buf, size_t count, loff_t *offs
 				*dest32 = ioread32(source32);
 				if (DEBUG_IO_TANSACTION) {
 					dev_info(&znode->pdev->dev,
-						"%s: 0x%04x read for %s\n",
+						"%s: 0x%08x read for %s\n",
 						__func__, *dest32, znode->nodename);
 				}
 				dest32++;
@@ -739,7 +739,7 @@ static ssize_t fo_write (struct file *file, const char *buf, size_t count, loff_
 	struct zfpga_node_data *znode = file->private_data;
 
 	if (DEBUG_NOTIFY) {
-		dev_info(&znode->pdev->dev, "%s offset: 0x%llx, length: 0x%zx for %s\n",
+		dev_info(&znode->pdev->dev, "%s offset: 0x%04x, length: 0x%04x for %s\n",
 			__func__, *offset, count, znode->nodename);
 	}
 	kbuff = fops_check_and_alloc_kmem(znode, count, offset);

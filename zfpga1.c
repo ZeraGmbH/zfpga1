@@ -1566,6 +1566,7 @@ MODULE_AUTHOR("Peter Lohmer (p.lohmer@zera.de)");
 MODULE_AUTHOR("Andreas Mueller (a.mueller@zera.de)");
 MODULE_LICENSE("GPL");
 MODULE_SUPPORTED_DEVICE("ZERA zFPGA1");
+MODULE_VERSION("1.1");
 
 module_param(debug, int, S_IRUGO|S_IWUSR);
 module_init(zfpga_init);

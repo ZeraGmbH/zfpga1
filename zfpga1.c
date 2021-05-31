@@ -242,6 +242,8 @@ static u32 znode_endian_order(struct zfpga_node_data *znode, u32 val)
 	return retval;
 }
 
+static int open_error_count = 0;
+
 /* ---------------------- common fops helper ---------------------- */
 int fpga_reset(const struct zfpga_node_data *znode)
 {
@@ -613,9 +615,17 @@ static int fo_open(struct inode *inode, struct file *file)
 		znode->nodetype == NODE_TYPE_MSG ||
 		znode->nodetype == NODE_TYPE_DBG) {
 		if (!test_bit(FLAG_GLOBAL_FPGA_CONFIGURED, &global_flags)) {
-			dev_info(&znode->pdev->dev, "opening %s requires configured FPGA!\n",
-				znode->nodename);
+			if(open_error_count < 3) {
+				dev_info(&znode->pdev->dev, "opening %s requires configured FPGA!\n",
+					znode->nodename);
+			}
+			else {
+				open_error_count++;
+			}
 			return -ENODEV;
+		}
+		else {
+			open_error_count = 0;
 		}
 	}
 	/* boot device: avoid accidental double fpga booting / write only / reset fpga */

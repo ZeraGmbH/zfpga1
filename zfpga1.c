@@ -737,6 +737,9 @@ static ssize_t fo_write (struct file *file, const char *buf, size_t count, loff_
 	u32 *dest32, *source32, val32;
 	size_t transaction_no, transaction_count;
 	struct zfpga_node_data *znode = file->private_data;
+	size_t retval;
+  
+	retval = count;
 
 	if (DEBUG_NOTIFY) {
 		dev_info(&znode->pdev->dev, "%s offset: 0x%llx, length: 0x%zx for %s\n",
@@ -799,6 +802,12 @@ static ssize_t fo_write (struct file *file, const char *buf, size_t count, loff_
 						break;
 				}
 			}
+			udelay(100); /* give the fpga 100 uS for signal 'hey I am up' */
+			if (!gpio_get_value(znode->node_specifc_data.boot.gpio_done)) {
+				retval = -EFAULT;
+				dev_info(&znode->pdev->dev,	"%s fpga boot failed for %s\n",
+					__func__, znode->nodename);
+			}
 			break;
 		case NODE_TYPE_REG:
 		case NODE_TYPE_EC:
@@ -842,7 +851,7 @@ static ssize_t fo_write (struct file *file, const char *buf, size_t count, loff_
 		dev_info(&znode->pdev->dev, "%s 0x%lx bytes written for %s\n",
 			__func__, (unsigned long)(count), znode->nodename);
 	}
-	return count;
+	return retval;
 }
 
 static loff_t fo_lseek(struct file *file, loff_t offset, int origin)

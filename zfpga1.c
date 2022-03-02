@@ -55,7 +55,8 @@ MODULE_DEVICE_TABLE(of, zfpga_of_match);
 #define MAX_EC_COUNT 1
 #define MAX_MSG_COUNT 1
 #define MAX_DBG_COUNT 1
-#define MAX_NODE_COUNT MAX_BOOT_COUNT+MAX_REG_COUNT+MAX_DSP_COUNT+MAX_EC_COUNT+MAX_MSG_COUNT+MAX_DBG_COUNT
+#define MAX_SOURCE_COUNT 1
+#define MAX_NODE_COUNT MAX_BOOT_COUNT+MAX_REG_COUNT+MAX_DSP_COUNT+MAX_EC_COUNT+MAX_MSG_COUNT+MAX_DBG_COUNT+MAX_SOURCE_COUNT
 
 enum node_types {
 	NODE_TYPE_BOOT = 0,
@@ -64,6 +65,7 @@ enum node_types {
 	NODE_TYPE_EC,
 	NODE_TYPE_MSG,
 	NODE_TYPE_DBG,
+	NODE_TYPE_SOURCE,
 
 	NODE_TYPE_COUNT
 };
@@ -74,7 +76,7 @@ enum node_types {
 static volatile unsigned long global_flags = 0;
 
 #define FLAG_GLOBAL_FPGA_BOOT_DEVICE_FOUND 0 /* ensure assumption above */
-#define FLAG_GLOBAL_FPGA_CONFIGURED 1        /* fpga booted/configured state */
+#define FLAG_GLOBAL_FPGA_CONFIGURED 1		/* fpga booted/configured state */
 
 /* node type specific data definitions */
 struct boot_data {
@@ -88,7 +90,7 @@ struct reg_data {
 };
 
 struct dsp_data {
-	u32 dsp_magic_id;             /* dsp type identification */
+	u32 dsp_magic_id;			 /* dsp type identification */
 	struct fasync_struct *aqueue;
 };
 
@@ -100,32 +102,37 @@ struct msg_data {
 	struct fasync_struct *aqueue;
 };
 
+struct source_data {
+	struct fasync_struct *aqueue;
+};
+
 /* device node data: further information on device nodes / devices below */
 struct zfpga_node_data {
 	const char *nodename;
-	u8 nodetype;                  /* set by devicetree - see enum node_types above for valid values */
-	void __iomem *base;           /* io mem region address */
-	resource_size_t size;         /* io mem region size */
-	struct cdev cdev;             /* hook to our instance in fop callbacks */
-	struct device *device;        /* in case we want to add entries to sysfs */
+	u8 nodetype;				  /* set by devicetree - see enum node_types above for valid values */
+	void __iomem *base;		   /* io mem region address */
+	resource_size_t size;		 /* io mem region size */
+	struct cdev cdev;			 /* hook to our instance in fop callbacks */
+	struct device *device;		/* in case we want to add entries to sysfs */
 	struct platform_device *pdev; /* don't forget our grandparent */
 	volatile unsigned long flags; /* data type arch specific for atomic bit access */
-	unsigned int irq;             /* > 0 -> an interrupt handler was requested */
-	u8 endian32[4];               /* fsl-EIM has special ideas of addressing */
-    union node_specific {
+	unsigned int irq;			 /* > 0 -> an interrupt handler was requested */
+	u8 endian32[4];			   /* fsl-EIM has special ideas of addressing */
+	union node_specific {
 		struct boot_data boot;
 		struct reg_data reg;
 		struct dsp_data dsp;
 		struct ec_data ec;
 		struct msg_data msg;
+		struct source_data source;
 	} node_specifc_data;
 };
 
 /* per node flags */
 #define FLAG_INT_HAND_ON (1<<0) /* to avoid unwanted interrupt firing for
-                                   dsp/reg these are interrupts are enabled on
-                                   first device open */
-#define FLAG_OPEN        (1<<1) /* avoid file opened  more than once */
+								   dsp/reg these are interrupts are enabled on
+								   first device open */
+#define FLAG_OPEN		(1<<1) /* avoid file opened  more than once */
 #define FLAG_DSP_RUNNING (1<<2) /* keep track of dsp running state */
 
 /* device data
@@ -159,6 +166,12 @@ struct zfpga_dev_data {
 /* fpga msg status bits */
 #define FPGA_MSG_STAT_IRQ (1<<0)
 
+/* fpga addresses for source access */
+#define FPGA_ADDR_SOURCE_IRQ 0x000
+
+/* fpga source status bits */
+#define FPGA_SOURCE_STAT_IRQ (1<<0)
+
 /* fpga addresses for dsp access */
 #define FPGA_ADDR_DSP_SPI 0x00
 #define FPGA_ADDR_DSP_SERIAL 0x04
@@ -185,7 +198,7 @@ struct zfpga_dev_data {
 
 /* dsp internal data memory space */
 #define ADSP_DATA_MEM_BASE_21262   0x82800
-#define ADSP_DATA_MEM_TOP_21262    0x87FFF
+#define ADSP_DATA_MEM_TOP_21262	0x87FFF
 
 #define ADSP_DATA_MEM_BASE_21262_1 0xE0800
 #define ADSP_DATA_MEM_TOP_21262_1  0xE3FFF
@@ -276,7 +289,8 @@ static void* fops_check_and_alloc_kmem(
 		case NODE_TYPE_EC:
 		case NODE_TYPE_MSG:
 		case NODE_TYPE_DBG:
-			/* Note: fpga/ec/msg/dbg is memory mapped 1:1. Therefore limits are taken from
+		case NODE_TYPE_SOURCE:
+			/* Note: fpga/ec/msg/dbg/source is memory mapped 1:1. Therefore limits are taken from
 			 * devicetree settings */
 			if ( (*offset < 0) || /* is that possible ?? */
 					((*offset + count) > znode->size) ||
@@ -474,6 +488,42 @@ static irqreturn_t msg_isr(int irq_nr, void *dev_id)
 	return ret;
 }
 
+static irqreturn_t source_isr(int irq_nr, void *dev_id)
+{
+	struct zfpga_node_data *znode = dev_id;
+	u32 status;
+	void* adr = znode->base + FPGA_ADDR_SOURCE_IRQ;
+	irqreturn_t ret = IRQ_NONE;
+
+	if (DEBUG_INTERRUPT) {
+		pr_info("%s entered int %u for %s!\n",
+			__func__, irq_nr, znode->nodename);
+	}
+	if (znode->nodetype == NODE_TYPE_SOURCE) {
+		status = ioread32(adr);
+		if (DEBUG_INTERRUPT) {
+			pr_info("irq status 0x%08x read for %s\n", status, znode->nodename);
+		}
+		if (status & FPGA_SOURCE_STAT_IRQ) {
+			/* acknowledge irq + fasync */
+			if (DEBUG_NOTIFY) {
+				pr_info("irq reset for %s\n", znode->nodename);
+			}
+			iowrite32( FPGA_SOURCE_STAT_IRQ, adr); /* ack irq */
+			if (znode->node_specifc_data.source.aqueue) {
+				kill_fasync(&znode->node_specifc_data.source.aqueue, SIGIO, POLL_IN);
+			}
+			ret = IRQ_HANDLED;
+		}
+	}
+	else {
+		pr_info("%s: irq for non source device %s received ?!\n",
+			__func__, znode->nodename);
+	}
+	return ret;
+}
+
+
 static irqreturn_t dsp_isr(int irq_nr, void *dev_id)
 {
 	struct zfpga_node_data *znode = dev_id;
@@ -550,6 +600,12 @@ int znode_request_interrupt(struct zfpga_node_data *znode)
 				irqhandler = ec_isr;
 			}
 			break;
+		case NODE_TYPE_SOURCE:
+			/* to avoid unwanted fire: fpga must be booted */
+			if(test_bit(FLAG_GLOBAL_FPGA_CONFIGURED, &global_flags)) {
+				irqhandler = source_isr;
+			}
+			break;
 		/* No interrupt for DBG */
 	}
 	if (znode->irq && irqhandler && !test_bit(FLAG_INT_HAND_ON, &znode->flags)) {
@@ -606,11 +662,12 @@ static int fo_open(struct inode *inode, struct file *file)
 		dev_info(&znode->pdev->dev, "%s already opened!\n", znode->nodename);
 		return -EBUSY;
 	}
-	/* reg, dsp, ec, msg and dbg devices require a configured/booted FPGA */
+	/* reg, dsp, ec, msg, source and dbg devices require a configured/booted FPGA */
 	if(znode->nodetype == NODE_TYPE_REG ||
 		znode->nodetype == NODE_TYPE_DSP ||
 		znode->nodetype == NODE_TYPE_EC ||
 		znode->nodetype == NODE_TYPE_MSG ||
+		znode->nodetype == NODE_TYPE_SOURCE ||
 		znode->nodetype == NODE_TYPE_DBG) {
 		if (!test_bit(FLAG_GLOBAL_FPGA_CONFIGURED, &global_flags)) {
 			dev_info(&znode->pdev->dev, "opening %s requires configured FPGA!\n",
@@ -877,6 +934,9 @@ static int fo_fasync(int fd, struct file *file, int mode)
 			break;
 		case NODE_TYPE_MSG:
 			async_callback = &znode->node_specifc_data.msg.aqueue;
+			break;
+		case NODE_TYPE_SOURCE:
+			async_callback = &znode->node_specifc_data.source.aqueue;
 			break;
 	}
 	if(async_callback) {
@@ -1236,7 +1296,7 @@ static int zdev_create_char_devices(struct platform_device *pdev, struct zfpga_d
 				NULL,
 				"%s",
 				zfpga->nodes[node_added_count].nodename);
-            if(IS_ERR(zfpga->nodes[node_added_count].device)) {
+			if(IS_ERR(zfpga->nodes[node_added_count].device)) {
 				ret = PTR_ERR(zfpga->nodes[node_added_count].device);
 				dev_info(&pdev->dev, "device_create failed for %s\n",
 					zfpga->nodes[node_added_count].nodename);

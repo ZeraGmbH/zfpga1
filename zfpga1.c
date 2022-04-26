@@ -741,7 +741,6 @@ static ssize_t fo_read (struct file *file, char *buf, size_t count, loff_t *offs
 		case NODE_TYPE_EC:
 		case NODE_TYPE_MSG:
 		case NODE_TYPE_DBG:
-		case NODE_TYPE_SOURCE:
 			/* data reads 32bitwise mapped 1:1 */
 			source32 = znode->base + *offset;
 			dest32 = kbuff;
@@ -756,6 +755,21 @@ static ssize_t fo_read (struct file *file, char *buf, size_t count, loff_t *offs
 				source32++;
 				dest32++;
 			}
+			break;
+		case NODE_TYPE_SOURCE:
+			/* data reads 32bitwise mapped 1:1 */
+			source32 = znode->base + *offset;
+			dest32 = kbuff;
+			transaction_count = count>>2;
+			dev_info(&znode->pdev->dev,
+					"%s: starting ioread32_rep for %s\n",
+					__func__, znode->nodename);
+			ioread32_rep(source32, dest32, transaction_count);
+			if (DEBUG_IO_TANSACTION) {
+				dev_info(&znode->pdev->dev,
+					"%s: 0x%08x values read %s\n",
+					__func__, transaction_count, znode->nodename);
+				}
 			break;
 		case NODE_TYPE_DSP:
 			/* dsp-device reads data 32bitwise from single fixed address in fpga */
@@ -1637,7 +1651,7 @@ MODULE_AUTHOR("Peter Lohmer (p.lohmer@zera.de)");
 MODULE_AUTHOR("Andreas Mueller (a.mueller@zera.de)");
 MODULE_LICENSE("GPL");
 MODULE_SUPPORTED_DEVICE("ZERA zFPGA1");
-MODULE_VERSION("1.2");
+MODULE_VERSION("E.0");
 
 module_param(debug, int, S_IRUGO|S_IWUSR);
 module_init(zfpga_init);

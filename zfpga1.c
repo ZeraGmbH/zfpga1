@@ -723,6 +723,7 @@ static ssize_t fo_read (struct file *file, char *buf, size_t count, loff_t *offs
 {
 	void* kbuff;
 	u32 *source32, *dest32;
+	u16 *source16, *dest16;
 	size_t transaction_no, transaction_count;
 	struct zfpga_node_data *znode = file->private_data;
 
@@ -758,13 +759,13 @@ static ssize_t fo_read (struct file *file, char *buf, size_t count, loff_t *offs
 			break;
 		case NODE_TYPE_SOURCE:
 			/* data reads 32bitwise mapped 1:1 */
-			source32 = znode->base + *offset;
-			dest32 = kbuff;
-			transaction_count = count>>2;
+			source16 = znode->base + *offset;
+			dest16 = kbuff;
+			transaction_count = count;
 			dev_info(&znode->pdev->dev,
 					"%s: starting ioread32_rep for %s\n",
 					__func__, znode->nodename);
-			ioread32_rep(source32, dest32, transaction_count);
+			ioread16_rep(source16, dest16, transaction_count);
 			if (DEBUG_IO_TANSACTION) {
 				dev_info(&znode->pdev->dev,
 					"%s: 0x%08x values read %s\n",

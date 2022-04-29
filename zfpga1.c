@@ -759,13 +759,13 @@ static ssize_t fo_read (struct file *file, char *buf, size_t count, loff_t *offs
 			break;
 		case NODE_TYPE_SOURCE:
 			/* data reads 32bitwise mapped 1:1 */
-			source32 = znode->base + *offset;
-			dest32 = kbuff;
-			transaction_count = count>>2;
+			source16 = znode->base + *offset;
+			dest16 = kbuff;
+			transaction_count = count<<1;
 			dev_info(&znode->pdev->dev,
 					"%s: starting memcpy_fromio for %s\n",
 					__func__, znode->nodename);
-			memcpy_fromio(dest32, source32, transaction_count);
+			memcpy_fromio(dest16, source16, transaction_count);
 			if (DEBUG_IO_TANSACTION) {
 				dev_info(&znode->pdev->dev,
 					"%s: 0x%08x values read %s\n",

@@ -759,13 +759,13 @@ static ssize_t fo_read (struct file *file, char *buf, size_t count, loff_t *offs
 			break;
 		case NODE_TYPE_SOURCE:
 			/* data reads 32bitwise mapped 1:1 */
-			source16 = znode->base + *offset;
-			dest16 = kbuff;
-			transaction_count = count;
+			source32 = znode->base + *offset;
+			dest32 = kbuff;
+			transaction_count = count>>2;
 			dev_info(&znode->pdev->dev,
-					"%s: starting ioread32_rep for %s\n",
+					"%s: starting memcpy_fromio for %s\n",
 					__func__, znode->nodename);
-			ioread16_rep(source16, dest16, transaction_count);
+			memcpy_fromio(dest32, source32, transaction_count);
 			if (DEBUG_IO_TANSACTION) {
 				dev_info(&znode->pdev->dev,
 					"%s: 0x%08x values read %s\n",
@@ -1652,7 +1652,7 @@ MODULE_AUTHOR("Peter Lohmer (p.lohmer@zera.de)");
 MODULE_AUTHOR("Andreas Mueller (a.mueller@zera.de)");
 MODULE_LICENSE("GPL");
 MODULE_SUPPORTED_DEVICE("ZERA zFPGA1");
-MODULE_VERSION("E.0");
+MODULE_VERSION("E.1");
 
 module_param(debug, int, S_IRUGO|S_IWUSR);
 module_init(zfpga_init);

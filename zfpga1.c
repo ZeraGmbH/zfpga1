@@ -725,7 +725,12 @@ static ssize_t fo_read (struct file *file, char *buf, size_t count, loff_t *offs
 	u32 *source32, *dest32;
 	size_t transaction_no, transaction_count;
 	struct zfpga_node_data *znode = file->private_data;
-
+	
+	
+	int i = 0;
+	unsigned char *d, *s;
+	
+	
 	if (DEBUG_NOTIFY) {
 		dev_info(&znode->pdev->dev, "%s offset: 0x%llx, length: 0x%zx for %s\n",
 			__func__, *offset, count, znode->nodename);
@@ -764,7 +769,43 @@ static ssize_t fo_read (struct file *file, char *buf, size_t count, loff_t *offs
 			dev_info(&znode->pdev->dev,
 					"%s: starting memcpy_fromio for %s\n",
 					__func__, znode->nodename);
-			memcpy_fromio(dest32, source32, transaction_count);
+			//memcpy_fromio(dest32, source32, transaction_count);
+			
+			
+			d = (unsigned char *)dest32;
+			s = (unsigned char *)source32;
+			for (i = transaction_count >> 4; i > 0; i--) {
+				*d++ = *s++;
+				*d++ = *s++;
+				*d++ = *s++;
+				*d++ = *s++;
+				*d++ = *s++;
+				*d++ = *s++;
+				*d++ = *s++;
+				*d++ = *s++;
+				*d++ = *s++;
+				*d++ = *s++;
+				*d++ = *s++;
+				*d++ = *s++;
+				*d++ = *s++;
+				*d++ = *s++;
+				*d++ = *s++;
+				*d++ = *s++;
+			}
+			if (transaction_count & 1 << 2) {
+				*d++ = *s++;
+				*d++ = *s++;
+				*d++ = *s++;
+				*d++ = *s++;
+			}
+			if (transaction_count & 1 << 1) {
+				*d++ = *s++;
+				*d++ = *s++;
+			}
+			if (transaction_count & 1)
+				*d++ = *s++;
+			
+			
 			if (DEBUG_IO_TANSACTION) {
 				dev_info(&znode->pdev->dev,
 					"%s: 0x%08x values read %s\n",
@@ -1651,7 +1692,7 @@ MODULE_AUTHOR("Peter Lohmer (p.lohmer@zera.de)");
 MODULE_AUTHOR("Andreas Mueller (a.mueller@zera.de)");
 MODULE_LICENSE("GPL");
 MODULE_SUPPORTED_DEVICE("ZERA zFPGA1");
-MODULE_VERSION("E.1");
+MODULE_VERSION("E.2");
 
 module_param(debug, int, S_IRUGO|S_IWUSR);
 module_init(zfpga_init);

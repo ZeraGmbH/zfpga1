@@ -22,6 +22,7 @@
 #include <linux/of_irq.h>
 
 #include "zfpga1.h"
+#include <arm_neon.h>
 
 /* module parameter keeper */
 static int debug = 0;

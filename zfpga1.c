@@ -876,7 +876,6 @@ static ssize_t fo_write (struct file *file, const char *buf, size_t count, loff_
 		case NODE_TYPE_REG:
 		case NODE_TYPE_EC:
 		case NODE_TYPE_DBG:
-		case NODE_TYPE_SOURCE:
 			/* data writes 32bitwise mapped 1:1 */
 			source32 = kbuff;
 			dest32 = znode->base + *offset;
@@ -890,6 +889,22 @@ static ssize_t fo_write (struct file *file, const char *buf, size_t count, loff_
 				source32++;
 				dest32++;
 			}
+			break;
+		case NODE_TYPE_SOURCE:
+			/* data reads 32bitwise mapped 1:1 */
+			source32 = kbuff;
+			dest32 = znode->base + *offset;
+			transaction_count = count;
+			dev_info(&znode->pdev->dev,
+					"%s: starting memcpy_toio for %s\n",
+					__func__, znode->nodename);
+			memcpy_toio(dest32, source32, transaction_count);
+			
+			if (DEBUG_IO_TANSACTION) {
+				dev_info(&znode->pdev->dev,
+					"%s: 0x%08x values read %s\n",
+					__func__, transaction_count, znode->nodename);
+				}
 			break;
 		case NODE_TYPE_DSP:
 			/* dsp-device writes data 32bitwise to single fixed address in fpga */
@@ -1652,7 +1667,7 @@ MODULE_AUTHOR("Peter Lohmer (p.lohmer@zera.de)");
 MODULE_AUTHOR("Andreas Mueller (a.mueller@zera.de)");
 MODULE_LICENSE("GPL");
 MODULE_SUPPORTED_DEVICE("ZERA zFPGA1");
-MODULE_VERSION("E.3");
+MODULE_VERSION("E.4");
 
 module_param(debug, int, S_IRUGO|S_IWUSR);
 module_init(zfpga_init);

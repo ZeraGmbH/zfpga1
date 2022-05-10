@@ -760,11 +760,11 @@ static ssize_t fo_read (struct file *file, char *buf, size_t count, loff_t *offs
 			/* data reads 32bitwise mapped 1:1 */
 			source32 = znode->base + *offset;
 			dest32 = kbuff;
-			transaction_count = count>>3;
+			transaction_count = count>>2;
 			dev_info(&znode->pdev->dev,
-					"%s: starting __raw_readsl for %s\n",
+					"%s: starting __raw_readsw for %s\n",
 					__func__, znode->nodename);
-			__raw_readsl(dest32, source32, transaction_count);
+			__raw_readsw(source32, dest32, transaction_count);
 			
 			if (DEBUG_IO_TANSACTION) {
 				dev_info(&znode->pdev->dev,
@@ -894,11 +894,11 @@ static ssize_t fo_write (struct file *file, const char *buf, size_t count, loff_
 			/* data reads 32bitwise mapped 1:1 */
 			source32 = kbuff;
 			dest32 = znode->base + *offset;
-			transaction_count = count>>3;
+			transaction_count = count>>2;
 			dev_info(&znode->pdev->dev,
-					"%s: starting __raw_writesl for %s\n",
+					"%s: starting __raw_writesw for %s\n",
 					__func__, znode->nodename);
-			__raw_writesl(dest32, source32, transaction_count);
+			__raw_writesw(dest32, source32, transaction_count);
 			
 			if (DEBUG_IO_TANSACTION) {
 				dev_info(&znode->pdev->dev,

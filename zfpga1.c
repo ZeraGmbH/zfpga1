@@ -760,11 +760,11 @@ static ssize_t fo_read (struct file *file, char *buf, size_t count, loff_t *offs
 			/* data reads 32bitwise mapped 1:1 */
 			source32 = znode->base + *offset;
 			dest32 = kbuff;
-			transaction_count = count>>2;
+			transaction_count = count;
 			dev_info(&znode->pdev->dev,
-					"%s: starting __ioread32_copy for %s\n",
+					"%s: starting memcpy_fromio for %s\n",
 					__func__, znode->nodename);
-			__ioread32_copy(dest32, source32, transaction_count);
+			memcpy_fromio(dest32, source32, transaction_count);
 			
 			if (DEBUG_IO_TANSACTION) {
 				dev_info(&znode->pdev->dev,
@@ -810,8 +810,6 @@ static ssize_t fo_write (struct file *file, const char *buf, size_t count, loff_
 	u32 *dest32, *source32, val32;
 	size_t transaction_no, transaction_count;
 	struct zfpga_node_data *znode = file->private_data;
-
-	u64 *dest64, *source64;
 
 	if (DEBUG_NOTIFY) {
 		dev_info(&znode->pdev->dev, "%s offset: 0x%llx, length: 0x%zx for %s\n",
@@ -894,13 +892,13 @@ static ssize_t fo_write (struct file *file, const char *buf, size_t count, loff_
 			break;
 		case NODE_TYPE_SOURCE:
 			/* data reads 32bitwise mapped 1:1 */
-			source64 = kbuff;
-			dest64 = znode->base + *offset;
-			transaction_count = count>>3;
+			source32 = kbuff;
+			dest32 = znode->base + *offset;
+			transaction_count = count;
 			dev_info(&znode->pdev->dev,
-					"%s: starting __iowrite64_copy for %s\n",
+					"%s: starting memcpy_toio for %s\n",
 					__func__, znode->nodename);
-			__iowrite64_copy(dest64, source64, transaction_count);
+			memcpy_toio(dest32, source32, transaction_count);
 			
 			if (DEBUG_IO_TANSACTION) {
 				dev_info(&znode->pdev->dev,
@@ -1669,7 +1667,7 @@ MODULE_AUTHOR("Peter Lohmer (p.lohmer@zera.de)");
 MODULE_AUTHOR("Andreas Mueller (a.mueller@zera.de)");
 MODULE_LICENSE("GPL");
 MODULE_SUPPORTED_DEVICE("ZERA zFPGA1");
-MODULE_VERSION("E.4");
+MODULE_VERSION("E.5");
 
 module_param(debug, int, S_IRUGO|S_IWUSR);
 module_init(zfpga_init);

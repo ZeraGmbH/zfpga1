@@ -738,9 +738,9 @@ static ssize_t fo_read (struct file *file, char *buf, size_t count, loff_t *offs
 	}
 	switch (znode->nodetype) {
 		case NODE_TYPE_REG:
-		case NODE_TYPE_EC:
-		case NODE_TYPE_MSG:
-		case NODE_TYPE_DBG:
+		//case NODE_TYPE_EC:
+		//case NODE_TYPE_MSG:
+		//case NODE_TYPE_DBG:
 			/* data reads 32bitwise mapped 1:1 */
 			source32 = znode->base + *offset;
 			dest32 = kbuff;
@@ -756,6 +756,9 @@ static ssize_t fo_read (struct file *file, char *buf, size_t count, loff_t *offs
 				dest32++;
 			}
 			break;
+		case NODE_TYPE_EC:
+		case NODE_TYPE_MSG:
+		case NODE_TYPE_DBG:
 		case NODE_TYPE_SOURCE:
 			/* data reads 32bitwise mapped 1:1 */
 			source32 = znode->base + *offset;
@@ -874,8 +877,8 @@ static ssize_t fo_write (struct file *file, const char *buf, size_t count, loff_
 			}
 			break;
 		case NODE_TYPE_REG:
-		case NODE_TYPE_EC:
-		case NODE_TYPE_DBG:
+		//case NODE_TYPE_EC:
+		//case NODE_TYPE_DBG:
 			/* data writes 32bitwise mapped 1:1 */
 			source32 = kbuff;
 			dest32 = znode->base + *offset;
@@ -890,6 +893,8 @@ static ssize_t fo_write (struct file *file, const char *buf, size_t count, loff_
 				dest32++;
 			}
 			break;
+		case NODE_TYPE_EC:
+		case NODE_TYPE_DBG:	
 		case NODE_TYPE_SOURCE:
 			/* data reads 32bitwise mapped 1:1 */
 			source32 = kbuff;
@@ -1667,7 +1672,7 @@ MODULE_AUTHOR("Peter Lohmer (p.lohmer@zera.de)");
 MODULE_AUTHOR("Andreas Mueller (a.mueller@zera.de)");
 MODULE_LICENSE("GPL");
 MODULE_SUPPORTED_DEVICE("ZERA zFPGA1");
-MODULE_VERSION("E.5");
+MODULE_VERSION("E.6");
 
 module_param(debug, int, S_IRUGO|S_IWUSR);
 module_init(zfpga_init);

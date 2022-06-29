@@ -761,12 +761,12 @@ static ssize_t fo_read (struct file *file, char *buf, size_t count, loff_t *offs
 			source32 = znode->base + *offset;
 			dest32 = kbuff;
 			transaction_count = count;
-			dev_info(&znode->pdev->dev,
-					"%s: starting memcpy_fromio for %s\n",
-					__func__, znode->nodename);
 			memcpy_fromio(dest32, source32, transaction_count);
 			
 			if (DEBUG_IO_TANSACTION) {
+				dev_info(&znode->pdev->dev,
+					"%s: using memcpy_fromio for %s\n",
+					__func__, znode->nodename);
 				dev_info(&znode->pdev->dev,
 					"%s: 0x%08x values read %s\n",
 					__func__, transaction_count, znode->nodename);
@@ -895,12 +895,13 @@ static ssize_t fo_write (struct file *file, const char *buf, size_t count, loff_
 			source32 = kbuff;
 			dest32 = znode->base + *offset;
 			transaction_count = count;
-			dev_info(&znode->pdev->dev,
-					"%s: starting memcpy_toio for %s\n",
-					__func__, znode->nodename);
 			memcpy_toio(dest32, source32, transaction_count);
 			
 			if (DEBUG_IO_TANSACTION) {
+				dev_info(&znode->pdev->dev,
+					"%s: using memcpy_toio for %s\n",
+					__func__, znode->nodename);
+
 				dev_info(&znode->pdev->dev,
 					"%s: 0x%08x values written %s\n",
 					__func__, transaction_count, znode->nodename);

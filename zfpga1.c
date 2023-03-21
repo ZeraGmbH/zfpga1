@@ -741,7 +741,6 @@ static ssize_t fo_read (struct file *file, char *buf, size_t count, loff_t *offs
 		case NODE_TYPE_EC:
 		case NODE_TYPE_MSG:
 		case NODE_TYPE_DBG:
-		case NODE_TYPE_SOURCE:
 			/* data reads 32bitwise mapped 1:1 */
 			source32 = znode->base + *offset;
 			dest32 = kbuff;
@@ -756,6 +755,22 @@ static ssize_t fo_read (struct file *file, char *buf, size_t count, loff_t *offs
 				source32++;
 				dest32++;
 			}
+			break;
+		case NODE_TYPE_SOURCE:
+			/* data reads 32bitwise mapped 1:1 */
+			source32 = znode->base + *offset;
+			dest32 = kbuff;
+			transaction_count = count;
+			memcpy_fromio(dest32, source32, transaction_count);
+			
+			if (DEBUG_IO_TANSACTION) {
+				dev_info(&znode->pdev->dev,
+					"%s: using memcpy_fromio for %s\n",
+					__func__, znode->nodename);
+				dev_info(&znode->pdev->dev,
+					"%s: 0x%08x values read %s\n",
+					__func__, transaction_count, znode->nodename);
+				}
 			break;
 		case NODE_TYPE_DSP:
 			/* dsp-device reads data 32bitwise from single fixed address in fpga */
@@ -861,7 +876,6 @@ static ssize_t fo_write (struct file *file, const char *buf, size_t count, loff_
 		case NODE_TYPE_REG:
 		case NODE_TYPE_EC:
 		case NODE_TYPE_DBG:
-		case NODE_TYPE_SOURCE:
 			/* data writes 32bitwise mapped 1:1 */
 			source32 = kbuff;
 			dest32 = znode->base + *offset;
@@ -875,6 +889,23 @@ static ssize_t fo_write (struct file *file, const char *buf, size_t count, loff_
 				source32++;
 				dest32++;
 			}
+			break;
+		case NODE_TYPE_SOURCE:
+			/* data reads 32bitwise mapped 1:1 */
+			source32 = kbuff;
+			dest32 = znode->base + *offset;
+			transaction_count = count;
+			memcpy_toio(dest32, source32, transaction_count);
+			
+			if (DEBUG_IO_TANSACTION) {
+				dev_info(&znode->pdev->dev,
+					"%s: using memcpy_toio for %s\n",
+					__func__, znode->nodename);
+
+				dev_info(&znode->pdev->dev,
+					"%s: 0x%08x values written %s\n",
+					__func__, transaction_count, znode->nodename);
+				}
 			break;
 		case NODE_TYPE_DSP:
 			/* dsp-device writes data 32bitwise to single fixed address in fpga */

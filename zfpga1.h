@@ -92,9 +92,9 @@ enum resourceType {bootMem, regMem, hipMem, sysIrq, doneIrq};
 #define INTERRUPT_NAME_REG "zFPGA-IRQReq"
 #define INTERRUPT_NAME_DSP "zFPGA-IRQDSP"
 
-#define FPGA_irqdone_flags IRQF_SHARED | IRQF_SAMPLE_RANDOM | IRQF_TRIGGER_RISING | IRQF_TRIGGER_FALLING
-#define FPGA_irqsys_flags IRQF_SHARED | IRQF_SAMPLE_RANDOM | IRQF_TRIGGER_RISING
-#define ADSP_irqsys_flags IRQF_SHARED | IRQF_SAMPLE_RANDOM | IRQF_TRIGGER_RISING
+#define FPGA_irqdone_flags IRQF_SHARED | IRQF_TRIGGER_RISING | IRQF_TRIGGER_FALLING
+#define FPGA_irqsys_flags IRQF_SHARED | IRQF_TRIGGER_RISING
+#define ADSP_irqsys_flags IRQF_SHARED | IRQF_TRIGGER_RISING
 
 struct device_stat {
 	unsigned long fpgabootcount; /* 0 after reset or init */

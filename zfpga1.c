@@ -1665,7 +1665,6 @@ MODULE_DESCRIPTION("ZERA FPGA Type 1 kernel module");
 MODULE_AUTHOR("Peter Lohmer (p.lohmer@zera.de)");
 MODULE_AUTHOR("Andreas Mueller (a.mueller@zera.de)");
 MODULE_LICENSE("GPL");
-MODULE_SUPPORTED_DEVICE("ZERA zFPGA1");
 MODULE_VERSION("1.2");
 
 module_param(debug, int, S_IRUGO|S_IWUSR);

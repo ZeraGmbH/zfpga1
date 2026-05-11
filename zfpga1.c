@@ -1231,7 +1231,7 @@ static const struct file_operations fops_arr[NODE_TYPE_COUNT] = {
 		.owner = THIS_MODULE,
 		.open = fo_open,
 		.release = fo_release,
-		.llseek = no_llseek,
+		.llseek = noop_llseek,
 		.write = fo_write,
 		.compat_ioctl = fo_ioctl_boot
 	},

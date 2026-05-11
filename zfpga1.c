@@ -1582,7 +1582,7 @@ exit:
 	return ret;
 }
 
-static int zfpga_remove(struct platform_device *pdev)
+static void zfpga_remove(struct platform_device *pdev)
 {
 	struct zfpga_dev_data *zfpga;
 	unsigned int inode;
@@ -1614,8 +1614,6 @@ static int zfpga_remove(struct platform_device *pdev)
 		unregister_chrdev_region(zfpga->first_char_node, zfpga->count_nodes);
 	}
 	platform_set_drvdata(pdev, NULL);
-
-	return 0;
 }
 
 static struct platform_driver zfpga_platform_driver = {

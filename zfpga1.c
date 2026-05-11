@@ -256,7 +256,7 @@ static u32 znode_endian_order(struct zfpga_node_data *znode, u32 val)
 }
 
 /* ---------------------- common fops helper ---------------------- */
-int fpga_reset(const struct zfpga_node_data *znode)
+static int fpga_reset(const struct zfpga_node_data *znode)
 {
 	if (DEBUG_NOTIFY) {
 		dev_info(&znode->pdev->dev, "%s entered for %s\n",
@@ -567,7 +567,7 @@ static irqreturn_t dsp_isr(int irq_nr, void *dev_id)
 }
 
 /* ---------------------- request/free device's interrupt ---------------------- */
-int znode_request_interrupt(struct zfpga_node_data *znode)
+static int znode_request_interrupt(struct zfpga_node_data *znode)
 {
 	irq_handler_t irqhandler = NULL;
 	int ret = 0;
@@ -630,7 +630,7 @@ exit:
 	return ret;
 }
 
-void zdev_free_interrupts(
+static void zdev_free_interrupts(
 	struct platform_device *pdev, struct zfpga_dev_data *zfpga)
 {
 	unsigned int inode;
@@ -1178,7 +1178,7 @@ static long fo_ioctl_boot (struct file *file, unsigned int cmd, unsigned long ar
 	}
 }
 
-long fo_ioctl_dsp(struct file *file, unsigned int cmd, unsigned long arg)
+static long fo_ioctl_dsp(struct file *file, unsigned int cmd, unsigned long arg)
 {
 	struct zfpga_node_data *znode = file->private_data;
 	switch (cmd) {

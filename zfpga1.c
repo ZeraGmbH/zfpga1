@@ -1494,7 +1494,7 @@ static int zdev_check_dt_settings(struct platform_device *pdev, struct zfpga_dev
 				ret = znode_create_gpio(
 					&zfpga->nodes[zfpga->count_nodes],
 					child_node_dt,
-					GPIOF_DIR_OUT,
+					GPIOF_OUT_INIT_HIGH,
 					"gpio-reset",
 					&curr_node_data->node_specifc_data.boot.gpio_reset);
 				if(ret) {
@@ -1505,7 +1505,7 @@ static int zdev_check_dt_settings(struct platform_device *pdev, struct zfpga_dev
 				ret = znode_create_gpio(
 					&zfpga->nodes[zfpga->count_nodes],
 					child_node_dt,
-					GPIOF_DIR_IN,
+					GPIOF_IN,
 					"gpio-done",
 					&curr_node_data->node_specifc_data.boot.gpio_done);
 				if(ret) {

@@ -1630,7 +1630,7 @@ static int __init zfpga_init(void)
 {
 	int res;
 
-	zfpga_class = class_create(THIS_MODULE, ZERACLASS_NAME);
+	zfpga_class = class_create(ZERACLASS_NAME);
 	if (IS_ERR(zfpga_class)) {
 		pr_err("zfpga: unable to create class!\n");
 		res = PTR_ERR(zfpga_class);
